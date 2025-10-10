@@ -212,6 +212,39 @@
             font-style: italic;
         }
 
+        .editable {
+            cursor: text;
+            padding: 8px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+
+        .editable:hover {
+            background: #2a2a2a;
+            border-color: #667eea;
+        }
+
+        .editable:focus {
+            outline: none;
+            background: #2a2a2a;
+            border-color: #667eea;
+        }
+
+        .edit-indicator {
+            display: inline-block;
+            font-size: 0.8rem;
+            color: #999;
+            margin-left: 8px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .semantic-summary:hover .edit-indicator,
+        .email-preview:hover .edit-indicator {
+            opacity: 1;
+        }
+
         .blog-matches {
             margin-bottom: 30px;
         }
@@ -309,6 +342,108 @@
             font-size: 0.9rem;
             margin-left: 10px;
         }
+
+        .regeneration-section {
+            display: none;
+            background: #1a1a1a;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .regeneration-section.active {
+            display: block;
+        }
+
+        .regeneration-section h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+
+        .regeneration-section .help-text {
+            color: #999;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+        }
+
+        .regeneration-section textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 15px;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 14px;
+            resize: vertical;
+            transition: border-color 0.3s;
+            background: #2a2a2a;
+            color: #e0e0e0;
+            margin-bottom: 15px;
+        }
+
+        .regeneration-section textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .regeneration-section textarea::placeholder {
+            color: #666;
+        }
+
+        .regenerate-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .regenerate-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(240, 147, 251, 0.4);
+        }
+
+        .iteration-counter {
+            margin-top: 15px;
+            padding: 12px;
+            background: #2a2a2a;
+            border-radius: 6px;
+            color: #999;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
+        .iteration-counter.active {
+            display: block;
+        }
+
+        .context-history {
+            margin-top: 15px;
+            padding: 15px;
+            background: #2a2a2a;
+            border-radius: 6px;
+            border-left: 4px solid #f5576c;
+        }
+
+        .context-history h4 {
+            color: #f5576c;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+
+        .context-history-item {
+            color: #999;
+            font-size: 0.85rem;
+            padding: 8px 0;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        .context-history-item:last-child {
+            border-bottom: none;
+        }
+
+        .context-history-item strong {
+            color: #e0e0e0;
+        }
     </style>
 </head>
 <body>
@@ -362,8 +497,8 @@
 
                     <!-- Semantic Summary -->
                     <div class="semantic-summary" id="semanticSummary">
-                        <h3>🎯 Professional Summary</h3>
-                        <p id="semanticSummaryText"></p>
+                        <h3>🎯 Professional Summary <span class="edit-indicator">✏️ Click to edit</span></h3>
+                        <p id="semanticSummaryText" class="editable" contenteditable="true"></p>
                     </div>
 
                     <!-- Blog Matches -->
@@ -375,12 +510,26 @@
                     <!-- Email Preview -->
                     <div class="email-preview">
                         <div class="email-header">
-                            <p><strong>Subject:</strong> <span id="emailSubject"></span></p>
+                            <p><strong>Subject:</strong> <span class="edit-indicator">✏️ Click to edit</span></p>
+                            <span id="emailSubject" class="editable" contenteditable="true"></span>
                         </div>
-                        <div class="email-body" id="emailBody"></div>
+                        <div style="margin-top: 15px; margin-bottom: 5px; color: #999; font-size: 0.9rem;">
+                            <strong>Email Body:</strong> <span class="edit-indicator">✏️ Click to edit</span>
+                        </div>
+                        <div class="email-body editable" id="emailBody" contenteditable="true"></div>
                     </div>
 
                     <button class="btn btn-primary copy-btn" id="copyBtn">Copy Email to Clipboard 📋</button>
+
+                    <!-- Regeneration Section -->
+                    <div class="regeneration-section" id="regenerationSection">
+                        <h3>🔄 Refine with New Context</h3>
+                        <p class="help-text">Add new information you've learned about the candidate to update their summary and generate a new email with fresh blog matches.</p>
+                        <textarea id="contextInput" placeholder="Example: They mentioned they're interested in moving to platform engineering roles and have been exploring Kubernetes..."></textarea>
+                        <button class="btn btn-primary regenerate-btn" id="regenerateBtn">Regenerate with New Context 🔄</button>
+                        <div id="iterationCounter" class="iteration-counter"></div>
+                        <div id="contextHistory"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -394,12 +543,31 @@
         const error = document.getElementById('error');
         const result = document.getElementById('result');
         const copyBtn = document.getElementById('copyBtn');
+        const regenerationSection = document.getElementById('regenerationSection');
+        const contextInput = document.getElementById('contextInput');
+        const regenerateBtn = document.getElementById('regenerateBtn');
+        const iterationCounter = document.getElementById('iterationCounter');
+        const contextHistory = document.getElementById('contextHistory');
+
+        // State management for regeneration
+        let currentCandidateId = null;
+        let currentSemanticSummary = null;
+        let iterationCount = 0;
+        let contextHistoryItems = [];
 
         // Clear button
         clearBtn.addEventListener('click', () => {
             candidateInput.value = '';
             error.classList.remove('active');
             result.classList.remove('active');
+            regenerationSection.classList.remove('active');
+            contextInput.value = '';
+            currentCandidateId = null;
+            currentSemanticSummary = null;
+            iterationCount = 0;
+            contextHistoryItems = [];
+            iterationCounter.textContent = '';
+            contextHistory.innerHTML = '';
         });
 
         // Generate email
@@ -469,8 +637,19 @@
         });
 
         // Display result
-        function displayResult(data) {
+        function displayResult(data, isRegeneration = false) {
             const { candidate, semantic_summary, blog_matches, email } = data;
+
+            // Store state for regeneration
+            currentCandidateId = candidate.id;
+            currentSemanticSummary = semantic_summary;
+
+            // Reset iteration count for initial generation
+            if (!isRegeneration) {
+                iterationCount = 0;
+                contextHistoryItems = [];
+                contextHistory.innerHTML = '';
+            }
 
             // Candidate info
             document.getElementById('candidateInfo').innerHTML = `
@@ -499,6 +678,16 @@
 
             // Show result
             result.classList.add('active');
+
+            // Show regeneration section
+            regenerationSection.classList.add('active');
+
+            // Update iteration counter
+            if (iterationCount > 0) {
+                iterationCounter.textContent = `📊 Iteration ${iterationCount} - Email updated with new context`;
+            } else {
+                iterationCounter.textContent = '';
+            }
         }
 
         // Show error
@@ -507,19 +696,134 @@
             error.classList.add('active');
         }
 
-        // Copy to clipboard
+        // Copy to clipboard (uses current edited content)
         copyBtn.addEventListener('click', () => {
-            const subject = document.getElementById('emailSubject').textContent;
-            const body = document.getElementById('emailBody').textContent;
+            const subject = document.getElementById('emailSubject').innerText.trim();
+            const body = document.getElementById('emailBody').innerText.trim();
             const fullEmail = `Subject: ${subject}\n\n${body}`;
 
             navigator.clipboard.writeText(fullEmail).then(() => {
-                copyBtn.textContent = '✓ Copied!';
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = '✓ Copied! (including your edits)';
+                copyBtn.style.background = '#4caf50';
                 setTimeout(() => {
                     copyBtn.textContent = 'Copy Email to Clipboard 📋';
-                }, 2000);
+                    copyBtn.style.background = '';
+                }, 2500);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy to clipboard. Please select and copy manually.');
             });
         });
+
+        // Regenerate email with new context
+        regenerateBtn.addEventListener('click', async () => {
+            try {
+                // Validate input
+                const additionalContext = contextInput.value.trim();
+                if (!additionalContext) {
+                    showError('Please add some context before regenerating');
+                    return;
+                }
+
+                if (!currentCandidateId || !currentSemanticSummary) {
+                    showError('No candidate data available. Please generate an email first.');
+                    return;
+                }
+
+                // Show loading
+                error.classList.remove('active');
+                loading.classList.add('active');
+                regenerateBtn.disabled = true;
+
+                // Step 1: Update context
+                const updateResponse = await fetch('/api/update-context', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        candidate_id: currentCandidateId,
+                        additional_context: additionalContext,
+                        previous_summary: currentSemanticSummary
+                    })
+                });
+
+                const updateData = await updateResponse.json();
+
+                if (!updateResponse.ok) {
+                    throw new Error(updateData.error || 'Failed to update context');
+                }
+
+                // Update current summary with the new one
+                currentSemanticSummary = updateData.semantic_summary;
+
+                // Step 2: Generate new email with updated context
+                const response = await fetch('/api/generate-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        candidate_id: currentCandidateId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to generate email');
+                }
+
+                // Increment iteration count
+                iterationCount++;
+
+                // Add to context history
+                contextHistoryItems.push({
+                    iteration: iterationCount,
+                    context: additionalContext,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+
+                // Update context history display
+                updateContextHistory();
+
+                // Display updated result
+                displayResult(data, true);
+
+                // Clear context input for next iteration
+                contextInput.value = '';
+
+                // Scroll to top of results to see changes
+                result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                loading.classList.remove('active');
+                regenerateBtn.disabled = false;
+            }
+        });
+
+        // Update context history display
+        function updateContextHistory() {
+            if (contextHistoryItems.length === 0) {
+                contextHistory.innerHTML = '';
+                return;
+            }
+
+            const historyHtml = `
+                <div class="context-history">
+                    <h4>📝 Context History</h4>
+                    ${contextHistoryItems.map(item => `
+                        <div class="context-history-item">
+                            <strong>Iteration ${item.iteration}</strong> (${item.timestamp}): ${item.context}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            contextHistory.innerHTML = historyHtml;
+        }
     </script>
 </body>
 </html>

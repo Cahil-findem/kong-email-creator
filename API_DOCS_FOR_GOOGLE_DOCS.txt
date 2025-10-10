@@ -1,0 +1,394 @@
+KONG EMAIL GENERATOR API DOCUMENTATION
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BASE URLS
+
+Production: https://kong-email-creator.vercel.app
+Local Development: http://localhost:8000
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+AUTHENTICATION (OPTIONAL)
+
+If API_KEY environment variable is set, include authentication in all requests:
+
+Method 1 - Header (Recommended):
+X-API-Key: your-secret-api-key
+
+Method 2 - Query Parameter:
+?api_key=your-secret-api-key
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+API ENDPOINTS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. GENERATE CANDIDATE EMAIL
+
+POST /api/process-candidate
+
+Generates a personalized nurture email for a candidate with matching blog recommendations.
+
+────────────────────────────────────────────────────────────────────────────────
+
+REQUEST
+
+Headers:
+  Content-Type: application/json
+  X-API-Key: your-secret-api-key (if authentication enabled)
+
+Request Body:
+{
+  "candidate": {
+    "ref": "candidate_id_123",
+    "candidate": {
+      "full_name": "John Doe",
+      "about_me": "Experienced software engineer with 8+ years...",
+      "location": {
+        "city": "San Francisco",
+        "state": "CA",
+        "country": "USA"
+      },
+      "linkedin": "https://linkedin.com/in/johndoe",
+      "emails": ["john@example.com"]
+    },
+    "skills": ["Python", "JavaScript", "API Design", "PostgreSQL"],
+    "workexp": [
+      {
+        "company": {
+          "name": "Acme Corp"
+        },
+        "projects": [
+          {
+            "role_and_group": {
+              "title": "Senior Software Engineer"
+            },
+            "description": "Led development of microservices architecture..."
+          }
+        ],
+        "duration": {
+          "start_date": "2020-01-01",
+          "end_date": "2024-01-01"
+        }
+      }
+    ],
+    "education": [
+      {
+        "school_info": {
+          "name": "University of Example"
+        },
+        "education_details": {
+          "degree": ["Bachelor of Science"],
+          "major": ["Computer Science"]
+        },
+        "duration": {
+          "start_date": "2012-09-01",
+          "end_date": "2016-06-01"
+        }
+      }
+    ]
+  }
+}
+
+────────────────────────────────────────────────────────────────────────────────
+
+SUCCESS RESPONSE (200 OK)
+
+{
+  "success": true,
+  "candidate": {
+    "id": "candidate_id_123",
+    "name": "John Doe",
+    "title": "Senior Software Engineer",
+    "company": "Acme Corp",
+    "location": "San Francisco, CA, USA"
+  },
+  "semantic_summary": "John is a senior software engineer with deep expertise in Python, JavaScript, and API architecture. His background spans high-growth tech companies and demonstrates strong system design thinking combined with hands-on implementation skills.",
+  "blog_matches": [
+    {
+      "title": "Building Scalable APIs with Kong Gateway",
+      "url": "https://konghq.com/blog/engineering/scalable-apis",
+      "relevance": 87.3,
+      "author": "Jane Smith",
+      "excerpt": "In this post, we explore patterns for building highly scalable APIs..."
+    },
+    {
+      "title": "Microservices Best Practices",
+      "url": "https://konghq.com/blog/engineering/microservices",
+      "relevance": 82.1,
+      "author": "Bob Johnson",
+      "excerpt": "Learn how to design resilient microservices architectures..."
+    },
+    {
+      "title": "PostgreSQL Performance Tuning",
+      "url": "https://konghq.com/blog/engineering/postgres-tuning",
+      "relevance": 78.9,
+      "author": "Alice Chen",
+      "excerpt": "Tips and tricks for optimizing your PostgreSQL database..."
+    }
+  ],
+  "email": {
+    "subject": "How's Acme treating you, John?",
+    "body": "Hi John,\n\nHope you're doing great! I've been meaning to reach out since I saw you landed at Acme Corp as Senior Software Engineer...\n\nBest,",
+    "candidate_name": "John Doe",
+    "candidate_title": "Senior Software Engineer",
+    "blog_count": 3
+  },
+  "timestamp": "2025-10-10T14:30:00.000Z"
+}
+
+────────────────────────────────────────────────────────────────────────────────
+
+ERROR RESPONSES
+
+400 Bad Request - Invalid input
+{
+  "error": "Invalid request. Please provide candidate JSON."
+}
+
+401 Unauthorized - Invalid or missing API key
+{
+  "error": "Unauthorized: Invalid API key"
+}
+
+404 Not Found - No matching blogs found
+{
+  "error": "No matching blog posts found. Try lowering the threshold."
+}
+
+500 Internal Server Error - Processing error
+{
+  "error": "Server error: <error details>"
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. HEALTH CHECK
+
+GET /api/health
+
+Check if the API is running and healthy.
+
+────────────────────────────────────────────────────────────────────────────────
+
+SUCCESS RESPONSE (200 OK)
+
+{
+  "status": "healthy",
+  "service": "candidate-email-generator",
+  "timestamp": "2025-10-10T14:30:00.000Z"
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CODE EXAMPLES
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+JAVASCRIPT / TYPESCRIPT
+
+async function generateCandidateEmail(candidateData) {
+  const response = await fetch('https://kong-email-creator.vercel.app/api/process-candidate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'your-secret-api-key'  // If authentication enabled
+    },
+    body: JSON.stringify({ candidate: candidateData })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error);
+  }
+
+  const result = await response.json();
+  
+  // Access the generated email
+  console.log('Subject:', result.email.subject);
+  console.log('Body:', result.email.body);
+  console.log('Matched Blogs:', result.blog_matches);
+  
+  return result;
+}
+
+// Example usage
+const candidate = {
+  ref: "candidate_123",
+  candidate: {
+    full_name: "John Doe",
+    current_title: "Senior Engineer"
+    // ... rest of candidate data
+  },
+  skills: ["Python", "API Design"],
+  workexp: []
+};
+
+const emailData = await generateCandidateEmail(candidate);
+
+────────────────────────────────────────────────────────────────────────────────
+
+PYTHON
+
+import requests
+
+def generate_candidate_email(candidate_data):
+    """Generate personalized email for a candidate"""
+    url = "https://kong-email-creator.vercel.app/api/process-candidate"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "X-API-Key": "your-secret-api-key"  # If authentication enabled
+    }
+    
+    payload = {"candidate": candidate_data}
+    
+    response = requests.post(url, json=payload, headers=headers)
+    response.raise_for_status()  # Raise exception for HTTP errors
+    
+    return response.json()
+
+# Example usage
+candidate = {
+    "ref": "candidate_123",
+    "candidate": {
+        "full_name": "John Doe",
+        "current_title": "Senior Engineer"
+        # ... rest of candidate data
+    },
+    "skills": ["Python", "API Design"],
+    "workexp": []
+}
+
+result = generate_candidate_email(candidate)
+
+# Access the generated email
+print(f"Subject: {result['email']['subject']}")
+print(f"Body: {result['email']['body']}")
+print(f"Matched {len(result['blog_matches'])} blogs")
+
+────────────────────────────────────────────────────────────────────────────────
+
+CURL
+
+curl -X POST https://kong-email-creator.vercel.app/api/process-candidate \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
+  -d '{
+    "candidate": {
+      "ref": "candidate_123",
+      "candidate": {
+        "full_name": "John Doe",
+        "current_title": "Senior Engineer"
+      },
+      "skills": ["Python", "API"],
+      "workexp": []
+    }
+  }'
+
+Or using a JSON file:
+
+curl -X POST https://kong-email-creator.vercel.app/api/process-candidate \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
+  -d @candidate.json
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PERFORMANCE & SPECS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Average Response Time: 5-8 seconds
+Maximum Timeout: 30 seconds
+Rate Limits: None (recommend adding if heavy usage expected)
+Cost per Request: ~$0.002 (OpenAI API usage)
+
+Processing Pipeline:
+1. Extract candidate information from JSON (~instant)
+2. Generate semantic summary using GPT-4o-mini (~2 seconds)
+3. Create vector embedding using OpenAI (~1 second)
+4. Search 750+ blog posts for semantic matches (~1 second)
+5. Filter results for diversity (remove generic posts) (~instant)
+6. Generate personalized email body using GPT-4o (~3 seconds)
+7. Generate subject line using GPT-4o-mini (~1 second)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+REQUIRED CANDIDATE FIELDS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Minimum required fields for the API to work:
+
+• ref (string) - Unique candidate identifier
+• candidate.full_name (string) - Candidate's full name
+
+Recommended fields for better results:
+
+• candidate.about_me (string) - Professional summary/bio
+• candidate.location (object) - City, state, country
+• skills (array of strings) - List of professional skills
+• workexp (array of objects) - Work experience history
+  - Each with: company.name, projects, duration
+• education (array of objects) - Educational background
+
+The more information provided, the better the email personalization and blog matching.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INTEGRATION CHECKLIST
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+☐ Get API endpoint URL from team lead
+☐ Get API key (if authentication is enabled)
+☐ Test with sample candidate JSON
+☐ Handle success response (200 OK)
+☐ Handle error responses (400, 401, 404, 500)
+☐ Implement retry logic for timeouts
+☐ Display email subject and body to user
+☐ Optionally display blog matches and semantic summary
+☐ Test with various candidate profiles
+☐ Add error logging for debugging
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SUPPORT & TROUBLESHOOTING
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Common Issues:
+
+1. "Invalid API key" error
+   → Check that X-API-Key header matches the shared key
+   → Ensure no extra spaces or quotes in the key
+
+2. "No matching blog posts found" error
+   → Candidate profile may be too sparse
+   → Add more skills, work experience, or bio information
+
+3. Request timeout
+   → Normal processing takes 5-8 seconds
+   → Retry the request if timeout occurs
+
+4. Invalid JSON format error
+   → Validate your JSON before sending
+   → Ensure candidate object structure matches the documentation
+
+5. CORS errors (browser-based apps)
+   → CORS is enabled on the API
+   → If issues persist, contact team lead
+
+For additional support:
+• Check API health: GET /api/health
+• Review your request JSON structure
+• Contact: [Your Team Contact]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Last Updated: October 10, 2025
+API Version: 1.0
+Documentation maintained by: [Your Name/Team]
