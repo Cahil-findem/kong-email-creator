@@ -14,14 +14,7 @@ from supabase import create_client
 from openai import OpenAI
 import tiktoken
 
-# Import our existing classes
-from vectorize_candidates import CandidateVectorizer
-from match_candidates_to_blogs import CandidateBlogMatcher
-
-# Initialize OpenAI for semantic processing
-openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-
-# Load environment variables
+# Load environment variables FIRST
 load_dotenv()
 
 # Configure logging
@@ -31,6 +24,13 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend requests
+
+# Import our existing classes
+from vectorize_candidates import CandidateVectorizer
+from match_candidates_to_blogs import CandidateBlogMatcher
+
+# Initialize OpenAI for semantic processing (after loading env vars)
+openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 # Initialize our services
 vectorizer = CandidateVectorizer()
