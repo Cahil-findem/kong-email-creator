@@ -356,6 +356,7 @@ def process_candidate():
                 'company': candidate_info['current_company'],
                 'location': candidate_info['location']
             },
+            'semantic_summary': semantic_summary,
             'blog_matches': [
                 {
                     'title': blog['blog_title'],

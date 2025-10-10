@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Candidate Email Generator</title>
+    <title>Kong Personalized Nurture Generator</title>
     <style>
         * {
             margin: 0;
@@ -191,6 +191,27 @@
             color: #999;
         }
 
+        .semantic-summary {
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #3a3a3a;
+            border-left: 4px solid #667eea;
+        }
+
+        .semantic-summary h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+
+        .semantic-summary p {
+            color: #e0e0e0;
+            line-height: 1.6;
+            font-style: italic;
+        }
+
         .blog-matches {
             margin-bottom: 30px;
         }
@@ -293,7 +314,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📧 Candidate Email Generator</h1>
+            <h1>📧 Kong Personalized Nurture Generator</h1>
             <p>Paste candidate JSON → Get personalized nurture email with matching blog posts</p>
         </div>
 
@@ -338,6 +359,12 @@
                 <div class="result" id="result">
                     <!-- Candidate Info -->
                     <div class="candidate-info" id="candidateInfo"></div>
+
+                    <!-- Semantic Summary -->
+                    <div class="semantic-summary" id="semanticSummary">
+                        <h3>🎯 Professional Summary</h3>
+                        <p id="semanticSummaryText"></p>
+                    </div>
 
                     <!-- Blog Matches -->
                     <div class="blog-matches">
@@ -443,7 +470,7 @@
 
         // Display result
         function displayResult(data) {
-            const { candidate, blog_matches, email } = data;
+            const { candidate, semantic_summary, blog_matches, email } = data;
 
             // Candidate info
             document.getElementById('candidateInfo').innerHTML = `
@@ -452,6 +479,9 @@
                 <p><strong>Company:</strong> ${candidate.company || 'N/A'}</p>
                 <p><strong>Location:</strong> ${candidate.location || 'N/A'}</p>
             `;
+
+            // Semantic summary
+            document.getElementById('semanticSummaryText').textContent = semantic_summary;
 
             // Blog matches
             const blogMatchesHtml = blog_matches.map(blog => `
