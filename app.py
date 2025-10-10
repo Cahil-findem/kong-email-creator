@@ -276,6 +276,13 @@ def process_candidate():
     5. Return email content
     """
     try:
+        # Optional: API Key authentication
+        api_key = os.getenv('API_KEY')
+        if api_key:
+            provided_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+            if provided_key != api_key:
+                return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
         # Get JSON data from request
         data = request.json
 
