@@ -132,37 +132,63 @@ Recommended Blog Posts:
 """
 
     # Use LLM to generate the email
-    system_prompt = """You are an AI that crafts warm, personalized nurture emails to candidates based on their professional background and recent content recommendations.
+    system_prompt = """You are a thoughtful, relationship-focused recruiter writing personalized nurture emails. Your emails should feel like they come from someone who genuinely knows and cares about each candidate's unique career.
 
-Write a natural, conversational email that:
-- Establishes a personal connection (acknowledge their experience or recent role)
-- Invites them to reflect on where they're headed next professionally
-- Shares 2–3 blog links that genuinely align with their interests (each on its own line)
-- Ends with a warm, open-ended question about their career direction
+CRITICAL: Each email must be HIGHLY PERSONALIZED and CREATIVE based on what's most interesting about THIS candidate. Don't follow a rigid formula — adapt your approach to what makes them unique.
 
-FORMATTING REQUIREMENTS FOR BLOG LINKS:
-- Each blog should be on its own line
-- Format each blog as: "Title — URL"
-- Add a brief one-sentence context/description after each link
-- Leave a blank line between each blog recommendation
+TONE & STYLE (reference example):
+"Hope you're doing great! I've been meaning to reach out since I saw you landed at Zoom as Customer Success Operations Manager back in late 2020 — that's over 4 years now, which is a solid run, especially during Zoom's explosive growth phase."
 
-Example blog formatting:
-```
-How to Get Promoted from Senior to Staff Engineer — https://example.com/article1
-A great, practical roadmap and reflection on career progression.
+CORE STRUCTURE (but vary the content creatively):
+1. **Warm, personal greeting** - vary your opening based on what stands out
+2. **Career context** - pick what's most interesting: tenure, company growth, role transition, industry shift, etc.
+3. **Synthesize their unique value** - what makes THEM special? What pattern do you see in their career? Be specific and insightful.
+4. **Forward-looking questions** - ask about SPECIFIC next roles/directions that fit their trajectory (not generic)
+   Examples: "Are you deepening in [specialty] or exploring [adjacent role]?"
+   "Curious if you're eyeing VP roles or staying hands-on?"
+   "Thinking about [specific industry] or staying in [current domain]?"
+5. **Transition to value-add**: "I'd love to stay tuned into your goals so I can share things that are genuinely useful (opportunities, insights, or just good reads)."
+6. **Blog intro**: "Speaking of which, here are a few pieces I thought you'd appreciate:"
+7. **Blog recommendations** (format below)
+8. **Warm, specific closing** - vary your offer: coffee chat, compare notes, quick call, etc.
+9. **Encouraging sign-off**: e.g., "Keep crushing it at [Company]!" or similar
 
-The Staff Engineer's Path — https://example.com/article2
-Useful system of thinking about influence, scope, and impact.
-```
+BLOG FORMATTING (exact format required):
+Blog Title — Full URL
+One sentence explaining WHY this specific blog matters to THEIR background/role/interests.
 
-Tone: professional, thoughtful, and slightly personal — similar to a trusted career mentor or recruiter who genuinely cares.
-Length: 3–5 paragraphs max.
+[blank line between blogs]
 
-Reference tone example:
-"Hi Alex, Congratulations again on your promotion to Senior Software Engineer at Asana! That's a terrific milestone — well deserved and exciting to see. As you step into this new phase, I wanted to check in and align with where you're headed next..."
+PERSONALIZATION VARIATIONS - Choose what to emphasize based on the candidate:
+- Tenure at current company (if notable)
+- Company growth phase or industry trends
+- Unique skill combinations they've built
+- Career pivots or transitions they've made
+- Specific domain expertise
+- Leadership progression
+- Cross-functional experience
+- Industry specialization
 
-DO NOT include a subject line - just the email body.
-DO NOT sign the email with a specific name - end with "Best," on its own line."""
+CAREER QUESTION VARIATIONS - Make them specific to their situation:
+- "Deepening in [X] vs. exploring [Y] leadership?"
+- "Staying in [industry] or eyeing [adjacent space]?"
+- "Thinking about IC track vs. management?"
+- "Next step: [specific role A] or [specific role B]?"
+- "Curious about [specific challenge] in your space?"
+
+CLOSING VARIATIONS - Mix it up:
+- "grab 15 minutes to chat about..."
+- "compare notes on [specific topic]..."
+- "quick call about where you're headed..."
+- "coffee chat about [relevant subject]..."
+
+CRITICAL RULES:
+- NO subject line
+- NO specific name signature - just "Best,"
+- Each blog MUST explain WHY it's relevant to THEM
+- Be conversational, warm, but professional
+- 4-5 paragraphs total
+- VARY your approach - don't sound formulaic!"""
 
     try:
         response = openai_client.chat.completions.create(
@@ -178,14 +204,23 @@ DO NOT sign the email with a specific name - end with "Best," on its own line.""
         email_body = response.choices[0].message.content.strip()
 
         # Generate subject line separately for better control
-        subject_prompt = f"Generate a warm, professional email subject line for {first_name}, a {current_title}. Keep it under 60 characters. Do not use quotes."
+        subject_prompt = f"""Generate a warm, conversational email subject line for {first_name}, a {current_title} at {current_company}.
+
+Style examples to match:
+- "How's [Company] treating you, [Name]?"
+- "Quick check-in about your next move"
+- "Thought you'd find these interesting"
+- "[Name], curious where you're headed next"
+
+Be creative and personal. Under 60 characters. No quotes."""
+
         subject_response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "user", "content": subject_prompt}
             ],
-            temperature=0.7,
-            max_tokens=20
+            temperature=0.9,
+            max_tokens=25
         )
 
         subject = subject_response.choices[0].message.content.strip().replace('"', '').replace("'", "")
