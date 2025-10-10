@@ -11,12 +11,11 @@ from openai import OpenAI
 # Load environment variables
 load_dotenv()
 
-# Configure logging
+# Configure logging (use StreamHandler only for Vercel compatibility)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('vectorize_candidates.log'),
         logging.StreamHandler()
     ]
 )

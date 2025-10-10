@@ -8,12 +8,11 @@ from supabase import create_client, Client
 # Load environment variables
 load_dotenv()
 
-# Configure logging
+# Configure logging (use StreamHandler only for Vercel compatibility)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('candidate_matching.log'),
         logging.StreamHandler()
     ]
 )
