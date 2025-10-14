@@ -55,49 +55,63 @@ def check_api_key():
 # INTERNAL HELPER FUNCTIONS (not exposed as endpoints)
 # ============================================================================
 
-def create_semantic_summary(candidate_info):
+def create_candidate_summaries(candidate_info):
     """
-    Internal: Create a semantic summary of the candidate for better embedding
+    Internal: Create three separate summaries for comprehensive candidate understanding
+    Returns dict with: professional_summary, job_preferences, interests
     """
     # Extract key details
     name = candidate_info.get('full_name', '')
     title = candidate_info.get('current_title', '')
     company = candidate_info.get('current_company', '')
+    location = candidate_info.get('location', '')
     about_me = candidate_info.get('about_me', '')
     skills = candidate_info.get('skills', [])
 
     # Get work history summary
     work_exp = candidate_info.get('work_experience', [])
     companies = []
+    titles = []
     if work_exp and isinstance(work_exp, list):
-        for exp in work_exp[:3]:  # Top 3 companies
+        for exp in work_exp[:3]:  # Top 3 positions
             if isinstance(exp, dict):
                 comp_name = exp.get('company', {}).get('name', '')
+                job_title = exp.get('title', '')
                 if comp_name:
                     companies.append(comp_name)
+                if job_title:
+                    titles.append(job_title)
 
     # Build context for LLM
     profile_context = f"""
 Candidate Name: {name}
 Current Role: {title} at {company}
+Location: {location}
 Previous Companies: {', '.join(companies) if companies else 'N/A'}
+Previous Titles: {', '.join(titles) if titles else 'N/A'}
 About: {about_me[:500] if about_me else 'N/A'}
 Key Skills: {', '.join(skills[:15]) if skills else 'N/A'}
 """
 
-    # Use LLM to create semantic summary
-    system_prompt = """You are an AI that creates embeddings representing a candidate's professional identity, interests, and motivations.
+    # Use LLM to create three separate summaries
+    system_prompt = """You are an AI that analyzes candidate profiles to create three distinct summaries for vectorized matching.
 
-Given a candidate profile, extract a compact, semantically rich summary that captures the essence of who this person is professionally and what content would likely resonate with them.
+Given a candidate profile, generate THREE separate text summaries as valid JSON:
 
-Focus on:
-- Domain expertise (industries, functions, seniority)
-- Key skills and competencies
-- Motivations and professional values inferred from their work history
-- Emerging topics or themes they might engage with (e.g., automation, leadership, data, AI)
+1. **professional_summary**: A 2-3 sentence paragraph describing their professional identity, domain expertise, key competencies, career trajectory, and professional values. Focus on WHO they are as a professional.
 
-Output a single text paragraph (2–3 sentences) describing this person's professional focus and interests, suitable for vectorization.
-Do not mention the JSON or refer to the structure — just describe the person naturally."""
+2. **job_preferences**: A 2-3 sentence paragraph describing their likely job preferences including: preferred job titles/roles, seniority level (IC vs Manager vs Executive), location preferences, company stage preferences (startup vs enterprise), and work style. Infer from their background what types of roles they'd be interested in next.
+
+3. **interests**: A 2-3 sentence paragraph describing subjects, skills, technologies, industries, and emerging topics they would find interesting. Think about what blog content would resonate - technical topics, industry trends, leadership themes, specific technologies, etc.
+
+Output ONLY valid JSON in this exact format:
+{
+  "professional_summary": "...",
+  "job_preferences": "...",
+  "interests": "..."
+}
+
+Be specific and inferential. Don't just list their current role - synthesize patterns and predict interests."""
 
     try:
         response = openai_client.chat.completions.create(
@@ -107,26 +121,37 @@ Do not mention the JSON or refer to the structure — just describe the person n
                 {"role": "user", "content": profile_context}
             ],
             temperature=0.7,
-            max_tokens=200
+            max_tokens=400,
+            response_format={"type": "json_object"}
         )
 
-        semantic_summary = response.choices[0].message.content.strip()
-        logger.info(f"Generated semantic summary: {semantic_summary[:100]}...")
-        return semantic_summary
+        summaries_json = response.choices[0].message.content.strip()
+        summaries = json.loads(summaries_json)
+
+        logger.info(f"Generated professional summary: {summaries['professional_summary'][:80]}...")
+        logger.info(f"Generated job preferences: {summaries['job_preferences'][:80]}...")
+        logger.info(f"Generated interests: {summaries['interests'][:80]}...")
+
+        return summaries
 
     except Exception as e:
-        logger.error(f"Error generating semantic summary: {str(e)}")
-        # Fallback to basic summary
-        return f"{name} is a {title} with expertise in {', '.join(skills[:5]) if skills else 'various areas'}. Currently working at {company}."
+        logger.error(f"Error generating candidate summaries: {str(e)}")
+        # Fallback to basic summaries
+        return {
+            "professional_summary": f"{name} is a {title} with expertise in {', '.join(skills[:5]) if skills else 'various areas'}. Currently working at {company}.",
+            "job_preferences": f"Interested in {title} roles at companies similar to {company}. Open to opportunities in {location}.",
+            "interests": f"Interested in {', '.join(skills[:5]) if skills else 'industry trends'} and professional development in their field."
+        }
 
 
-def vectorize_candidate_summary(candidate_data, semantic_summary):
+def vectorize_candidate_summaries(candidate_data, summaries):
     """
-    Internal: Vectorize candidate using LLM-generated semantic summary
+    Internal: Vectorize candidate using three LLM-generated summaries
+    summaries dict contains: professional_summary, job_preferences, interests
     Returns: success boolean
     """
     try:
-        logger.info("Vectorizing candidate with semantic summary...")
+        logger.info("Vectorizing candidate with three-field summary...")
 
         # Extract candidate information
         candidate_info = vectorizer.extract_candidate_info(candidate_data)
@@ -144,19 +169,60 @@ def vectorize_candidate_summary(candidate_data, semantic_summary):
 
         logger.info(f"Saved candidate profile {candidate_id} with profile_id {profile_id}")
 
-        # Generate embedding from the LLM-created semantic summary (not raw profile!)
-        logger.info(f"Generating embedding from semantic summary ({len(semantic_summary)} chars)...")
-        embedding = vectorizer.generate_embedding(semantic_summary)
+        # Generate three separate embeddings
+        professional_summary = summaries.get('professional_summary', '')
+        job_preferences = summaries.get('job_preferences', '')
+        interests = summaries.get('interests', '')
 
-        # Save embedding with semantic summary as embedding_text
-        success = vectorizer.save_candidate_embedding(profile_id, semantic_summary, embedding)
+        logger.info(f"Generating embeddings for three fields...")
+        logger.info(f"  - Professional summary: {len(professional_summary)} chars")
+        logger.info(f"  - Job preferences: {len(job_preferences)} chars")
+        logger.info(f"  - Interests: {len(interests)} chars")
 
-        if success:
-            logger.info(f"Successfully vectorized candidate {candidate_id} with semantic summary")
-            return True
+        # Generate embeddings using OpenAI
+        prof_embedding = vectorizer.generate_embedding(professional_summary)
+        pref_embedding = vectorizer.generate_embedding(job_preferences)
+        int_embedding = vectorizer.generate_embedding(interests)
+
+        # Save all three embeddings to database
+        supabase = vectorizer.supabase
+
+        # Check if embedding exists
+        existing = supabase.table('candidate_embeddings').select('id').eq(
+            'candidate_profile_id', profile_id
+        ).execute()
+
+        if existing.data:
+            # Update existing embedding
+            result = supabase.table('candidate_embeddings').update({
+                'professional_summary': professional_summary,
+                'professional_summary_embedding': prof_embedding,
+                'job_preferences': job_preferences,
+                'job_preferences_embedding': pref_embedding,
+                'interests': interests,
+                'interests_embedding': int_embedding,
+                # Keep legacy field for backwards compatibility
+                'embedding_text': professional_summary,
+                'embedding': prof_embedding
+            }).eq('candidate_profile_id', profile_id).execute()
         else:
-            logger.error(f"Failed to save embedding for candidate {candidate_id}")
-            return False
+            # Insert new embedding
+            result = supabase.table('candidate_embeddings').insert({
+                'candidate_profile_id': profile_id,
+                'professional_summary': professional_summary,
+                'professional_summary_embedding': prof_embedding,
+                'job_preferences': job_preferences,
+                'job_preferences_embedding': pref_embedding,
+                'interests': interests,
+                'interests_embedding': int_embedding,
+                # Keep legacy field for backwards compatibility
+                'embedding_text': professional_summary,
+                'embedding': prof_embedding,
+                'token_count': len(professional_summary.split()) + len(job_preferences.split()) + len(interests.split())
+            }).execute()
+
+        logger.info(f"Successfully vectorized candidate {candidate_id} with three-field embeddings")
+        return True
 
     except Exception as e:
         logger.error(f"Error vectorizing candidate: {str(e)}", exc_info=True)
@@ -406,9 +472,9 @@ def process_candidate():
 
     Flow:
     1. Extract candidate info
-    2. Create semantic summary
-    3. Vectorize and store
-    4. Match blogs
+    2. Create three summaries (professional, preferences, interests)
+    3. Vectorize all three and store
+    4. Match blogs using three embeddings
     5. Generate email
 
     Request:
@@ -420,7 +486,9 @@ def process_candidate():
     {
         "success": true,
         "candidate": { id, name, title, company, location },
-        "semantic_summary": "...",
+        "professional_summary": "...",
+        "job_preferences": "...",
+        "interests": "...",
         "blog_matches": [...],
         "email": { subject, body, ... },
         "timestamp": "..."
@@ -448,25 +516,27 @@ def process_candidate():
 
         logger.info(f"Extracted candidate: {candidate_info['full_name']} ({candidate_id})")
 
-        # Step 2: Create semantic summary
-        logger.info("Creating semantic summary...")
-        semantic_summary = create_semantic_summary(candidate_info)
+        # Step 2: Create three separate summaries
+        logger.info("Creating three-field summaries...")
+        summaries = create_candidate_summaries(candidate_info)
 
-        # Step 3: Vectorize and store
-        logger.info("Vectorizing candidate...")
-        success = vectorize_candidate_summary(candidate_data, semantic_summary)
+        # Step 3: Vectorize all three fields and store
+        logger.info("Vectorizing candidate with three embeddings...")
+        success = vectorize_candidate_summaries(candidate_data, summaries)
         if not success:
             return jsonify({'error': 'Failed to vectorize candidate profile'}), 500
 
-        # Step 4: Match blogs
-        logger.info("Finding matching blogs...")
+        # Step 4: Match blogs using three embeddings
+        logger.info("Finding matching blogs using three-embedding search...")
         top_blogs = match_blogs_for_candidate_internal(candidate_id)
         if not top_blogs:
             return jsonify({'error': 'No matching blog posts found.'}), 404
 
-        # Step 5: Generate email
+        # Step 5: Generate email (use combined context)
         logger.info("Generating email...")
-        email_content = generate_email_content(candidate_info, top_blogs, semantic_summary)
+        # Combine all three summaries for email generation context
+        combined_summary = f"{summaries['professional_summary']}\n\n{summaries['job_preferences']}\n\n{summaries['interests']}"
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary)
 
         # Return response
         response = {
@@ -478,13 +548,15 @@ def process_candidate():
                 'company': candidate_info['current_company'],
                 'location': candidate_info['location']
             },
-            'semantic_summary': semantic_summary,
+            'professional_summary': summaries['professional_summary'],
+            'job_preferences': summaries['job_preferences'],
+            'interests': summaries['interests'],
             'blog_matches': format_blog_response(top_blogs),
             'email': email_content,
             'timestamp': datetime.now().isoformat()
         }
 
-        logger.info("Successfully processed candidate!")
+        logger.info("Successfully processed candidate with three-field embeddings!")
         return jsonify(response)
 
     except Exception as e:
@@ -495,33 +567,34 @@ def process_candidate():
 @app.route('/api/update-context', methods=['POST'])
 def update_context():
     """
-    Append new context to candidate's accumulated knowledge base
+    Append new context to a specific section of candidate's knowledge base
 
     Flow:
     1. Get candidate from DB
-    2. Retrieve existing embedding_text
+    2. Retrieve existing section content
     3. Append new context with timestamp
-    4. Re-vectorize accumulated context
+    4. Re-vectorize that section
     5. Store updated embedding
 
     Request:
     {
         "candidate_id": "pub_lnkd_123",
-        "additional_context": "They mentioned interest in platform engineering and learning Kubernetes..."
+        "additional_context": "They mentioned interest in platform engineering and learning Kubernetes...",
+        "section": "interests"  // Options: "job_preferences" or "interests" (default: "interests")
     }
 
     Response:
     {
         "success": true,
         "candidate_id": "...",
-        "accumulated_context": "Full accumulated knowledge about candidate...",
+        "section_updated": "interests",
+        "updated_content": "Full accumulated knowledge for that section...",
         "context_added": "They mentioned interest in...",
-        "context_length": 1250,
         "timestamp": "..."
     }
 
-    Note: This endpoint APPENDS to existing context rather than replacing it,
-    building a comprehensive understanding over time.
+    Note: This endpoint APPENDS to the specified section rather than replacing it.
+    The professional_summary is not updatable via this endpoint (it's derived from profile data).
     """
     try:
         # Authentication
@@ -535,66 +608,85 @@ def update_context():
 
         candidate_id = data['candidate_id']
         additional_context = data['additional_context']
+        section = data.get('section', 'interests')  # Default to interests
 
-        logger.info(f"Updating context for {candidate_id}")
+        # Validate section
+        if section not in ['job_preferences', 'interests']:
+            return jsonify({'error': 'Invalid section. Must be "job_preferences" or "interests".'}), 400
+
+        logger.info(f"Updating {section} for candidate {candidate_id}")
 
         # Get candidate from database
         candidate_profile = matcher.get_candidate_by_id(candidate_id)
         if not candidate_profile:
             return jsonify({'error': f'Candidate {candidate_id} not found in database'}), 404
 
-        # Step 1: Get existing embedding text from database
-        logger.info("Retrieving existing context from database...")
+        # Step 1: Get existing section content from database
+        logger.info(f"Retrieving existing {section} from database...")
 
-        existing_context = candidate_profile.get('embedding_text', '')
+        if section == 'job_preferences':
+            existing_content = candidate_profile.get('job_preferences', '')
+            field_name = 'job_preferences'
+            embedding_field = 'job_preferences_embedding'
+        else:  # interests
+            existing_content = candidate_profile.get('interests', '')
+            field_name = 'interests'
+            embedding_field = 'interests_embedding'
 
-        if not existing_context:
-            logger.warning("No existing context found, using candidate profile data")
-            # Fallback to basic profile info if no embedding exists yet
-            existing_context = f"{candidate_profile.get('full_name', '')} - {candidate_profile.get('current_title', '')}"
+        if not existing_content:
+            logger.warning(f"No existing {section} found, starting fresh")
+            existing_content = ""
 
         # Step 2: Append new context with timestamp
-        logger.info("Appending new context to existing knowledge...")
+        logger.info(f"Appending new context to {section}...")
 
         timestamp = datetime.now().strftime('%Y-%m-%d')
-        accumulated_context = f"{existing_context}\n\n[Updated {timestamp}] {additional_context}"
+        if existing_content:
+            updated_content = f"{existing_content}\n\n[Updated {timestamp}] {additional_context}"
+        else:
+            updated_content = f"[{timestamp}] {additional_context}"
 
-        logger.info(f"Accumulated context length: {len(accumulated_context)} characters")
+        logger.info(f"Updated {section} length: {len(updated_content)} characters")
 
-        # Step 3: Re-vectorize with accumulated context
-        logger.info("Re-vectorizing with accumulated context...")
+        # Step 3: Re-vectorize the updated section
+        logger.info(f"Re-vectorizing {section}...")
 
         try:
             embedding_response = openai_client.embeddings.create(
                 model="text-embedding-3-small",
-                input=accumulated_context
+                input=updated_content
             )
             updated_embedding = embedding_response.data[0].embedding
 
-            # Update the embedding in database
+            # Update the specific section and its embedding in database
             supabase = matcher.supabase
-            result = supabase.table('candidate_embeddings').update({
-                'embedding': updated_embedding,
-                'embedding_text': accumulated_context
-            }).eq('candidate_profile_id', candidate_profile['profile_id']).execute()
+            update_data = {
+                field_name: updated_content,
+                embedding_field: updated_embedding
+            }
 
-            logger.info(f"Updated embedding in database with {len(accumulated_context)} character context")
+            result = supabase.table('candidate_embeddings').update(
+                update_data
+            ).eq('candidate_profile_id', candidate_profile['profile_id']).execute()
+
+            logger.info(f"Updated {section} embedding in database ({len(updated_content)} chars)")
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"Error updating embedding: {error_msg}", exc_info=True)
-            return jsonify({'error': f'Failed to update candidate embedding: {error_msg}'}), 500
+            logger.error(f"Error updating {section} embedding: {error_msg}", exc_info=True)
+            return jsonify({'error': f'Failed to update {section} embedding: {error_msg}'}), 500
 
         # Return response
         response = {
             'success': True,
             'candidate_id': candidate_id,
-            'accumulated_context': accumulated_context,
+            'section_updated': section,
+            'updated_content': updated_content,
             'context_added': additional_context,
-            'context_length': len(accumulated_context),
+            'content_length': len(updated_content),
             'timestamp': datetime.now().isoformat()
         }
 
-        logger.info("Successfully updated candidate context!")
+        logger.info(f"Successfully updated {section} for candidate {candidate_id}!")
         return jsonify(response)
 
     except Exception as e:
@@ -657,17 +749,38 @@ def generate_email():
             'work_experience': []
         }
 
-        # Get semantic summary from database
+        # Get three-field summaries from database
         try:
             supabase = matcher.supabase
-            embedding_data = supabase.table('candidate_embeddings').select('embedding_text').eq(
-                'candidate_profile_id', candidate_profile['profile_id']
-            ).execute()
+            embedding_data = supabase.table('candidate_embeddings').select(
+                'professional_summary, job_preferences, interests, embedding_text'
+            ).eq('candidate_profile_id', candidate_profile['profile_id']).execute()
 
-            semantic_summary = embedding_data.data[0]['embedding_text'] if embedding_data.data else ''
+            if embedding_data.data:
+                professional_summary = embedding_data.data[0].get('professional_summary', '')
+                job_preferences = embedding_data.data[0].get('job_preferences', '')
+                interests = embedding_data.data[0].get('interests', '')
+
+                # Fallback to legacy field if new fields not available
+                if not professional_summary:
+                    professional_summary = embedding_data.data[0].get('embedding_text', '')
+            else:
+                professional_summary = f"{candidate_info['full_name']} - {candidate_info['current_title']}"
+                job_preferences = ""
+                interests = ""
+
         except Exception as e:
-            logger.error(f"Error retrieving semantic summary: {str(e)}")
-            semantic_summary = f"{candidate_info['full_name']} - {candidate_info['current_title']}"
+            logger.error(f"Error retrieving summaries: {str(e)}")
+            professional_summary = f"{candidate_info['full_name']} - {candidate_info['current_title']}"
+            job_preferences = ""
+            interests = ""
+
+        # Combine summaries for email generation
+        combined_summary = professional_summary
+        if job_preferences:
+            combined_summary += f"\n\n{job_preferences}"
+        if interests:
+            combined_summary += f"\n\n{interests}"
 
         # Match blogs
         logger.info("Finding matching blogs...")
@@ -677,7 +790,7 @@ def generate_email():
 
         # Generate email
         logger.info("Generating email...")
-        email_content = generate_email_content(candidate_info, top_blogs, semantic_summary)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary)
 
         # Return response
         response = {
@@ -689,7 +802,9 @@ def generate_email():
                 'company': candidate_info['current_company'],
                 'location': candidate_info['location']
             },
-            'semantic_summary': semantic_summary,
+            'professional_summary': professional_summary,
+            'job_preferences': job_preferences,
+            'interests': interests,
             'blog_matches': format_blog_response(top_blogs),
             'email': email_content,
             'timestamp': datetime.now().isoformat()

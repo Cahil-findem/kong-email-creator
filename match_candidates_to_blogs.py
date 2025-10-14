@@ -86,7 +86,7 @@ class CandidateBlogMatcher:
         deduplicate: bool = True
     ) -> List[Dict]:
         """
-        Find relevant blog posts for a candidate
+        Find relevant blog posts for a candidate using three-embedding search
 
         Args:
             candidate_id: External candidate ID
@@ -98,30 +98,49 @@ class CandidateBlogMatcher:
             List of matching blog posts with similarity scores
         """
         try:
-            # Get candidate profile and embedding
+            # Get candidate profile and embeddings
             candidate = self.get_candidate_by_id(candidate_id)
 
-            if not candidate or not candidate.get('embedding'):
-                logger.error(f"Candidate {candidate_id} not found or has no embedding")
+            if not candidate:
+                logger.error(f"Candidate {candidate_id} not found")
                 return []
 
-            embedding = candidate['embedding']
+            # Get all three embeddings (new format)
+            prof_embedding = candidate.get('professional_summary_embedding')
+            pref_embedding = candidate.get('job_preferences_embedding')
+            int_embedding = candidate.get('interests_embedding')
+
+            # Fallback to legacy embedding if new format not available yet
+            if not prof_embedding and candidate.get('embedding'):
+                logger.warning(f"Using legacy single embedding for candidate {candidate_id}")
+                prof_embedding = candidate['embedding']
+
+            if not prof_embedding:
+                logger.error(f"Candidate {candidate_id} has no embeddings")
+                return []
 
             # Choose appropriate search function
             if deduplicate:
-                function_name = 'search_top_blogs_for_candidate'
+                function_name = 'search_top_blogs_for_candidate_multi'
             else:
-                function_name = 'search_blogs_for_candidate'
+                function_name = 'search_blogs_for_candidate_multi'
 
-            # Search for matching blogs
-            result = self.supabase.rpc(
-                function_name,
-                {
-                    'candidate_embedding': embedding,
-                    'match_threshold': match_threshold,
-                    'match_count': match_count
-                }
-            ).execute()
+            # Search for matching blogs using three embeddings
+            rpc_params = {
+                'prof_embedding': prof_embedding,
+                'match_threshold': match_threshold,
+                'match_count': match_count
+            }
+
+            # Add optional embeddings if available
+            if pref_embedding:
+                rpc_params['pref_embedding'] = pref_embedding
+            if int_embedding:
+                rpc_params['int_embedding'] = int_embedding
+
+            logger.info(f"Searching with {len([e for e in [prof_embedding, pref_embedding, int_embedding] if e])} embedding types")
+
+            result = self.supabase.rpc(function_name, rpc_params).execute()
 
             if result.data:
                 logger.info(f"Found {len(result.data)} matching blogs for candidate {candidate_id}")
