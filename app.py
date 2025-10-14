@@ -100,15 +100,25 @@ Given a candidate profile, generate THREE separate text summaries as valid JSON:
 
 1. **professional_summary**: A 2-3 sentence paragraph describing their professional identity, domain expertise, key competencies, career trajectory, and professional values. Focus on WHO they are as a professional.
 
-2. **job_preferences**: A 2-3 sentence paragraph describing their likely job preferences including: preferred job titles/roles, seniority level (IC vs Manager vs Executive), location preferences, company stage preferences (startup vs enterprise), and work style. Infer from their background what types of roles they'd be interested in next.
+2. **job_preferences**: A simple structured format with three lines:
+   - Job Titles: [comma-separated list of 2-3 target job titles they'd likely pursue]
+   - Location: [their preferred work location - Remote, City/State, or Flexible]
+   - Seniority: [IC, Senior IC, Manager, Senior Manager, Director, VP, or Executive]
 
-3. **interests**: A 2-3 sentence paragraph describing subjects, skills, technologies, industries, and emerging topics they would find interesting. Think about what blog content would resonate - technical topics, industry trends, leadership themes, specific technologies, etc.
+3. **interests**: A bulleted list of their professional interests, formatted as:
+   • [Interest/Technology/Industry 1]
+   • [Interest/Technology/Industry 2]
+   • [Interest/Technology/Industry 3]
+   • [Interest/Technology/Industry 4]
+   • [Interest/Technology/Industry 5]
+
+   Focus on: technical skills, industry trends, domains, technologies, tools, and professional topics they'd engage with.
 
 Output ONLY valid JSON in this exact format:
 {
   "professional_summary": "...",
-  "job_preferences": "...",
-  "interests": "..."
+  "job_preferences": "Job Titles: ...\nLocation: ...\nSeniority: ...",
+  "interests": "• ...\n• ...\n• ...\n• ...\n• ..."
 }
 
 Be specific and inferential. Don't just list their current role - synthesize patterns and predict interests."""
@@ -137,10 +147,11 @@ Be specific and inferential. Don't just list their current role - synthesize pat
     except Exception as e:
         logger.error(f"Error generating candidate summaries: {str(e)}")
         # Fallback to basic summaries
+        skill_list = '\n'.join([f"• {skill}" for skill in skills[:5]]) if skills else "• Industry trends\n• Professional development"
         return {
             "professional_summary": f"{name} is a {title} with expertise in {', '.join(skills[:5]) if skills else 'various areas'}. Currently working at {company}.",
-            "job_preferences": f"Interested in {title} roles at companies similar to {company}. Open to opportunities in {location}.",
-            "interests": f"Interested in {', '.join(skills[:5]) if skills else 'industry trends'} and professional development in their field."
+            "job_preferences": f"Job Titles: {title}, Senior {title}\nLocation: {location if location else 'Flexible'}\nSeniority: Senior IC",
+            "interests": skill_list
         }
 
 
