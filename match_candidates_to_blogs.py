@@ -105,53 +105,31 @@ class CandidateBlogMatcher:
                 logger.error(f"Candidate {candidate_id} not found")
                 return []
 
-            # Get all three embeddings (new format)
+            # Get professional summary embedding (prioritize new format)
             prof_embedding = candidate.get('professional_summary_embedding')
-            pref_embedding = candidate.get('job_preferences_embedding')
-            int_embedding = candidate.get('interests_embedding')
 
             # Fallback to legacy embedding if new format not available yet
             if not prof_embedding and candidate.get('embedding'):
-                logger.warning(f"Using legacy single embedding for candidate {candidate_id}")
+                logger.warning(f"Using legacy embedding field for candidate {candidate_id}")
                 prof_embedding = candidate['embedding']
 
             if not prof_embedding:
                 logger.error(f"Candidate {candidate_id} has no embeddings")
                 return []
 
-            # Check if we have multiple embeddings
-            has_multi_embeddings = bool(pref_embedding or int_embedding)
-
-            if has_multi_embeddings:
-                # Use new multi-embedding search
-                if deduplicate:
-                    function_name = 'search_top_blogs_for_candidate_multi'
-                else:
-                    function_name = 'search_blogs_for_candidate_multi'
-
-                rpc_params = {
-                    'prof_embedding': prof_embedding,
-                    'pref_embedding': pref_embedding,  # Explicitly pass None if not available
-                    'int_embedding': int_embedding,      # Explicitly pass None if not available
-                    'match_threshold': match_threshold,
-                    'match_count': match_count
-                }
-
-                logger.info(f"Searching with {len([e for e in [prof_embedding, pref_embedding, int_embedding] if e])} embedding types (multi-search)")
+            # Always use single-embedding search (simple and reliable)
+            if deduplicate:
+                function_name = 'search_top_blogs_for_candidate'
             else:
-                # Use legacy single-embedding search
-                if deduplicate:
-                    function_name = 'search_top_blogs_for_candidate'
-                else:
-                    function_name = 'search_blogs_for_candidate'
+                function_name = 'search_blogs_for_candidate'
 
-                rpc_params = {
-                    'candidate_embedding': prof_embedding,
-                    'match_threshold': match_threshold,
-                    'match_count': match_count
-                }
+            rpc_params = {
+                'candidate_embedding': prof_embedding,
+                'match_threshold': match_threshold,
+                'match_count': match_count
+            }
 
-                logger.info(f"Searching with single embedding (legacy search)")
+            logger.info(f"Searching blogs using professional summary embedding")
 
             result = self.supabase.rpc(function_name, rpc_params).execute()
 
