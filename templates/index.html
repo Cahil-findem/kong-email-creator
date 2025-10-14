@@ -495,10 +495,22 @@
                     <!-- Candidate Info -->
                     <div class="candidate-info" id="candidateInfo"></div>
 
-                    <!-- Semantic Summary -->
+                    <!-- Professional Summary -->
                     <div class="semantic-summary" id="semanticSummary">
                         <h3>🎯 Professional Summary <span class="edit-indicator">✏️ Click to edit</span></h3>
                         <p id="semanticSummaryText" class="editable" contenteditable="true"></p>
+                    </div>
+
+                    <!-- Job Preferences -->
+                    <div class="semantic-summary" id="jobPreferences">
+                        <h3>💼 Job Preferences <span class="edit-indicator">✏️ Click to edit</span></h3>
+                        <p id="jobPreferencesText" class="editable" contenteditable="true" style="white-space: pre-line;"></p>
+                    </div>
+
+                    <!-- Interests -->
+                    <div class="semantic-summary" id="interests">
+                        <h3>⭐ Interests <span class="edit-indicator">✏️ Click to edit</span></h3>
+                        <p id="interestsText" class="editable" contenteditable="true" style="white-space: pre-line;"></p>
                     </div>
 
                     <!-- Blog Matches -->
@@ -661,6 +673,12 @@
 
             // Professional summary
             document.getElementById('semanticSummaryText').textContent = professional_summary;
+
+            // Job preferences
+            document.getElementById('jobPreferencesText').textContent = job_preferences || 'Not available';
+
+            // Interests
+            document.getElementById('interestsText').textContent = interests || 'Not available';
 
             // Blog matches
             const blogMatchesHtml = blog_matches.map(blog => `
