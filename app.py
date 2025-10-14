@@ -466,29 +466,33 @@ def process_candidate():
 @app.route('/api/update-context', methods=['POST'])
 def update_context():
     """
-    Update candidate's context/understanding
+    Append new context to candidate's accumulated knowledge base
 
     Flow:
     1. Get candidate from DB
-    2. Merge new context with previous summary
-    3. Re-vectorize with updated summary
-    4. Store updated embedding
+    2. Retrieve existing embedding_text
+    3. Append new context with timestamp
+    4. Re-vectorize accumulated context
+    5. Store updated embedding
 
     Request:
     {
         "candidate_id": "pub_lnkd_123",
-        "additional_context": "They mentioned interest in platform engineering...",
-        "previous_summary": "John is a senior engineer..." (optional)
+        "additional_context": "They mentioned interest in platform engineering and learning Kubernetes..."
     }
 
     Response:
     {
         "success": true,
         "candidate_id": "...",
-        "semantic_summary": "Updated summary...",
-        "context_applied": "...",
+        "accumulated_context": "Full accumulated knowledge about candidate...",
+        "context_added": "They mentioned interest in...",
+        "context_length": 1250,
         "timestamp": "..."
     }
+
+    Note: This endpoint APPENDS to existing context rather than replacing it,
+    building a comprehensive understanding over time.
     """
     try:
         # Authentication
@@ -502,7 +506,6 @@ def update_context():
 
         candidate_id = data['candidate_id']
         additional_context = data['additional_context']
-        previous_summary = data.get('previous_summary', '')
 
         logger.info(f"Updating context for {candidate_id}")
 
@@ -511,46 +514,31 @@ def update_context():
         if not candidate_profile:
             return jsonify({'error': f'Candidate {candidate_id} not found in database'}), 404
 
-        # Step 1: Update semantic summary with new context
-        logger.info("Updating semantic summary...")
+        # Step 1: Get existing embedding text from database
+        logger.info("Retrieving existing context from database...")
 
-        update_prompt = f"""You are updating a professional summary based on new information learned about a candidate.
+        existing_context = candidate_profile.get('embedding_text', '')
 
-Previous Summary:
-{previous_summary}
+        if not existing_context:
+            logger.warning("No existing context found, using candidate profile data")
+            # Fallback to basic profile info if no embedding exists yet
+            existing_context = f"{candidate_profile.get('full_name', '')} - {candidate_profile.get('current_title', '')}"
 
-New Information/Context:
-{additional_context}
+        # Step 2: Append new context with timestamp
+        logger.info("Appending new context to existing knowledge...")
 
-Please create an updated 2-3 sentence professional summary that incorporates this new information.
-The summary should seamlessly blend the previous understanding with the new insights.
-Focus on what's most relevant for matching them with blog content and career opportunities.
+        timestamp = datetime.now().strftime('%Y-%m-%d')
+        accumulated_context = f"{existing_context}\n\n[Updated {timestamp}] {additional_context}"
 
-Output only the updated summary, nothing else."""
+        logger.info(f"Accumulated context length: {len(accumulated_context)} characters")
 
-        try:
-            response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "user", "content": update_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=250
-            )
-
-            updated_summary = response.choices[0].message.content.strip()
-            logger.info(f"Updated summary: {updated_summary[:100]}...")
-        except Exception as e:
-            logger.error(f"Error updating summary: {str(e)}")
-            updated_summary = f"{previous_summary} {additional_context}"
-
-        # Step 2: Re-vectorize with updated context
-        logger.info("Re-vectorizing with updated context...")
+        # Step 3: Re-vectorize with accumulated context
+        logger.info("Re-vectorizing with accumulated context...")
 
         try:
             embedding_response = openai_client.embeddings.create(
                 model="text-embedding-3-small",
-                input=updated_summary
+                input=accumulated_context
             )
             updated_embedding = embedding_response.data[0].embedding
 
@@ -558,10 +546,10 @@ Output only the updated summary, nothing else."""
             supabase = matcher.supabase
             result = supabase.table('candidate_embeddings').update({
                 'embedding': updated_embedding,
-                'embedding_text': updated_summary
+                'embedding_text': accumulated_context
             }).eq('candidate_profile_id', candidate_profile['profile_id']).execute()
 
-            logger.info(f"Updated embedding in database. Result: {result}")
+            logger.info(f"Updated embedding in database with {len(accumulated_context)} character context")
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Error updating embedding: {error_msg}", exc_info=True)
@@ -571,8 +559,9 @@ Output only the updated summary, nothing else."""
         response = {
             'success': True,
             'candidate_id': candidate_id,
-            'semantic_summary': updated_summary,
-            'context_applied': additional_context,
+            'accumulated_context': accumulated_context,
+            'context_added': additional_context,
+            'context_length': len(accumulated_context),
             'timestamp': datetime.now().isoformat()
         }
 
