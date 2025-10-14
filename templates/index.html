@@ -638,11 +638,11 @@
 
         // Display result
         function displayResult(data, isRegeneration = false) {
-            const { candidate, semantic_summary, blog_matches, email } = data;
+            const { candidate, professional_summary, job_preferences, interests, blog_matches, email } = data;
 
             // Store state for regeneration
             currentCandidateId = candidate.id;
-            currentSemanticSummary = semantic_summary;
+            currentSemanticSummary = professional_summary;
 
             // Reset iteration count for initial generation
             if (!isRegeneration) {
@@ -659,8 +659,8 @@
                 <p><strong>Location:</strong> ${candidate.location || 'N/A'}</p>
             `;
 
-            // Semantic summary
-            document.getElementById('semanticSummaryText').textContent = semantic_summary;
+            // Professional summary
+            document.getElementById('semanticSummaryText').textContent = professional_summary;
 
             // Blog matches
             const blogMatchesHtml = blog_matches.map(blog => `
@@ -736,7 +736,7 @@
                 loading.classList.add('active');
                 regenerateBtn.disabled = true;
 
-                // Step 1: Update context
+                // Step 1: Update context (defaults to interests section)
                 const updateResponse = await fetch('/api/update-context', {
                     method: 'POST',
                     headers: {
@@ -745,7 +745,7 @@
                     body: JSON.stringify({
                         candidate_id: currentCandidateId,
                         additional_context: additionalContext,
-                        previous_summary: currentSemanticSummary
+                        section: 'interests'  // Update interests section by default
                     })
                 });
 
@@ -754,9 +754,6 @@
                 if (!updateResponse.ok) {
                     throw new Error(updateData.error || 'Failed to update context');
                 }
-
-                // Update current summary with the new one
-                currentSemanticSummary = updateData.semantic_summary;
 
                 // Step 2: Generate new email with updated context
                 const response = await fetch('/api/generate-email', {
