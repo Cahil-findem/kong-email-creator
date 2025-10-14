@@ -556,15 +556,16 @@ Output only the updated summary, nothing else."""
 
             # Update the embedding in database
             supabase = matcher.supabase
-            supabase.table('candidate_embeddings').update({
+            result = supabase.table('candidate_embeddings').update({
                 'embedding': updated_embedding,
                 'embedding_text': updated_summary
             }).eq('candidate_profile_id', candidate_profile['id']).execute()
 
-            logger.info("Updated embedding in database")
+            logger.info(f"Updated embedding in database. Result: {result}")
         except Exception as e:
-            logger.error(f"Error updating embedding: {str(e)}")
-            return jsonify({'error': 'Failed to update candidate embedding'}), 500
+            error_msg = str(e)
+            logger.error(f"Error updating embedding: {error_msg}", exc_info=True)
+            return jsonify({'error': f'Failed to update candidate embedding: {error_msg}'}), 500
 
         # Return response
         response = {
