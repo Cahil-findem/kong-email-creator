@@ -119,26 +119,43 @@ class CandidateBlogMatcher:
                 logger.error(f"Candidate {candidate_id} has no embeddings")
                 return []
 
-            # Choose appropriate search function
-            if deduplicate:
-                function_name = 'search_top_blogs_for_candidate_multi'
+            # Check if we have multiple embeddings
+            has_multi_embeddings = bool(pref_embedding or int_embedding)
+
+            if has_multi_embeddings:
+                # Use new multi-embedding search
+                if deduplicate:
+                    function_name = 'search_top_blogs_for_candidate_multi'
+                else:
+                    function_name = 'search_blogs_for_candidate_multi'
+
+                rpc_params = {
+                    'prof_embedding': prof_embedding,
+                    'match_threshold': match_threshold,
+                    'match_count': match_count
+                }
+
+                # Add optional embeddings if available
+                if pref_embedding:
+                    rpc_params['pref_embedding'] = pref_embedding
+                if int_embedding:
+                    rpc_params['int_embedding'] = int_embedding
+
+                logger.info(f"Searching with {len([e for e in [prof_embedding, pref_embedding, int_embedding] if e])} embedding types (multi-search)")
             else:
-                function_name = 'search_blogs_for_candidate_multi'
+                # Use legacy single-embedding search
+                if deduplicate:
+                    function_name = 'search_top_blogs_for_candidate'
+                else:
+                    function_name = 'search_blogs_for_candidate'
 
-            # Search for matching blogs using three embeddings
-            rpc_params = {
-                'prof_embedding': prof_embedding,
-                'match_threshold': match_threshold,
-                'match_count': match_count
-            }
+                rpc_params = {
+                    'candidate_embedding': prof_embedding,
+                    'match_threshold': match_threshold,
+                    'match_count': match_count
+                }
 
-            # Add optional embeddings if available
-            if pref_embedding:
-                rpc_params['pref_embedding'] = pref_embedding
-            if int_embedding:
-                rpc_params['int_embedding'] = int_embedding
-
-            logger.info(f"Searching with {len([e for e in [prof_embedding, pref_embedding, int_embedding] if e])} embedding types")
+                logger.info(f"Searching with single embedding (legacy search)")
 
             result = self.supabase.rpc(function_name, rpc_params).execute()
 
