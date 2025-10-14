@@ -122,15 +122,44 @@ Do not mention the JSON or refer to the structure — just describe the person n
 
 def vectorize_candidate_summary(candidate_data, semantic_summary):
     """
-    Internal: Vectorize candidate and store in database
+    Internal: Vectorize candidate using LLM-generated semantic summary
     Returns: success boolean
     """
     try:
-        logger.info("Vectorizing candidate profile...")
-        success = vectorizer.vectorize_candidate(candidate_data, skip_existing=False)
-        return success
+        logger.info("Vectorizing candidate with semantic summary...")
+
+        # Extract candidate information
+        candidate_info = vectorizer.extract_candidate_info(candidate_data)
+        candidate_id = candidate_info['candidate_id']
+
+        if not candidate_id:
+            logger.error("Candidate missing ID")
+            return False
+
+        # Save profile to database
+        profile_id = vectorizer.save_candidate_profile(candidate_info)
+        if not profile_id:
+            logger.error(f"Failed to save profile for candidate {candidate_id}")
+            return False
+
+        logger.info(f"Saved candidate profile {candidate_id} with profile_id {profile_id}")
+
+        # Generate embedding from the LLM-created semantic summary (not raw profile!)
+        logger.info(f"Generating embedding from semantic summary ({len(semantic_summary)} chars)...")
+        embedding = vectorizer.generate_embedding(semantic_summary)
+
+        # Save embedding with semantic summary as embedding_text
+        success = vectorizer.save_candidate_embedding(profile_id, semantic_summary, embedding)
+
+        if success:
+            logger.info(f"Successfully vectorized candidate {candidate_id} with semantic summary")
+            return True
+        else:
+            logger.error(f"Failed to save embedding for candidate {candidate_id}")
+            return False
+
     except Exception as e:
-        logger.error(f"Error vectorizing candidate: {str(e)}")
+        logger.error(f"Error vectorizing candidate: {str(e)}", exc_info=True)
         return False
 
 
