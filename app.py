@@ -559,7 +559,7 @@ Output only the updated summary, nothing else."""
             result = supabase.table('candidate_embeddings').update({
                 'embedding': updated_embedding,
                 'embedding_text': updated_summary
-            }).eq('candidate_profile_id', candidate_profile['id']).execute()
+            }).eq('candidate_profile_id', candidate_profile['profile_id']).execute()
 
             logger.info(f"Updated embedding in database. Result: {result}")
         except Exception as e:
@@ -643,7 +643,7 @@ def generate_email():
         try:
             supabase = matcher.supabase
             embedding_data = supabase.table('candidate_embeddings').select('embedding_text').eq(
-                'candidate_profile_id', candidate_profile['id']
+                'candidate_profile_id', candidate_profile['profile_id']
             ).execute()
 
             semantic_summary = embedding_data.data[0]['embedding_text'] if embedding_data.data else ''
