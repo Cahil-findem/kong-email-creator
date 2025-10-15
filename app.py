@@ -507,6 +507,7 @@ def process_candidate():
     {
         "success": true,
         "candidate": { id, name, title, company, location },
+        "candidate_profile": { ... full raw candidate JSON ... },
         "professional_summary": "...",
         "job_preferences": "...",
         "interests": "...",
@@ -569,6 +570,7 @@ def process_candidate():
                 'company': candidate_info['current_company'],
                 'location': candidate_info['location']
             },
+            'candidate_profile': candidate_data,  # Full raw candidate JSON for external use
             'professional_summary': summaries['professional_summary'],
             'job_preferences': summaries['job_preferences'],
             'interests': summaries['interests'],
