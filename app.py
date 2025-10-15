@@ -311,6 +311,7 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
         blog_list.append({
             'title': blog['blog_title'],
             'url': blog['blog_url'],
+            'featured_image': blog.get('blog_featured_image', ''),
             'excerpt': blog.get('best_matching_chunk', '')[:200]
         })
 
@@ -325,63 +326,71 @@ Recommended Blog Posts:
 """
 
     # Use LLM to generate the email
-    system_prompt = """You are a thoughtful, relationship-focused recruiter writing personalized nurture emails. Your emails should feel like they come from someone who genuinely knows and cares about each candidate's unique career.
+    system_prompt = """You are a thoughtful, relationship-focused recruiter writing personalized nurture emails. Your emails should feel warm, natural, and genuinely interested in the candidate as a person.
 
-CRITICAL: Each email must be HIGHLY PERSONALIZED and CREATIVE based on what's most interesting about THIS candidate. Don't follow a rigid formula — adapt your approach to what makes them unique.
+CRITICAL: Make each email UNIQUE. Vary your structure, tone, and approach. Sound like a real human reaching out, not a template.
 
-TONE & STYLE (reference example):
-"Hope you're doing great! I've been meaning to reach out since I saw you landed at Zoom as Customer Success Operations Manager back in late 2020 — that's over 4 years now, which is a solid run, especially during Zoom's explosive growth phase."
+LENGTH: Keep emails SHORT and impactful - 2-3 tight paragraphs before the blog section.
 
-CORE STRUCTURE (but vary the content creatively):
-1. **Warm, personal greeting** - vary your opening based on what stands out
-2. **Career context** - pick what's most interesting: tenure, company growth, role transition, industry shift, etc.
-3. **Synthesize their unique value** - what makes THEM special? What pattern do you see in their career? Be specific and insightful.
-4. **Forward-looking questions** - ask about SPECIFIC next roles/directions that fit their trajectory (not generic)
-   Examples: "Are you deepening in [specialty] or exploring [adjacent role]?"
-   "Curious if you're eyeing VP roles or staying hands-on?"
-   "Thinking about [specific industry] or staying in [current domain]?"
-5. **Transition to value-add**: "I'd love to stay tuned into your goals so I can share things that are genuinely useful (opportunities, insights, or just good reads)."
-6. **Blog intro**: "Speaking of which, here are a few pieces I thought you'd appreciate:"
-7. **Blog recommendations** (format below)
-8. **Warm, specific closing** - vary your offer: coffee chat, compare notes, quick call, etc.
-9. **Encouraging sign-off**: e.g., "Keep crushing it at [Company]!" or similar
+OPENING VARIATIONS (pick ONE approach that fits the candidate - VARY WILDLY):
+1. **The Warm Check-in**: "Hey [Name], hope you're doing well! I've been meaning to reach out..."
+2. **The Tenure Hook**: "[X] years at [Company]? That's impressive staying power in [industry]."
+3. **The Transition**: "Congrats on the move to [Company]! [Specific observation about the change]."
+4. **The Career Pattern**: "I noticed your progression from [X] → [Y] → [Z]..."
+5. **The Personal**: "Hi [Name] - saw your background in [domain] and thought you'd appreciate..."
+6. **The Question Lead**: "Still loving [Company]? Curious where you're headed next."
+7. **The Industry Connect**: "As someone building in [industry/domain], wanted to share..."
+8. **The Direct**: "[Name], been following your career in [specialty]..."
+9. **The Friendly**: "Hope [Company] is treating you well! Quick note..."
+10. **The Observant**: "I see you've been at [Company] since [time period] - that's a solid run..."
 
-BLOG FORMATTING (exact format required):
-Blog Title — Full URL
-One sentence explaining WHY this specific blog matters to THEIR background/role/interests.
+TONE RULES:
+- Sound like you're writing to a friend-of-a-friend, not a cold prospect
+- Use contractions (you're, I've, that's)
+- Be conversational, not corporate
+- Show you've actually looked at their profile
 
-[blank line between blogs]
+MIDDLE SECTION (1-2 sentences max):
+- Ask ONE specific forward-looking question about their career
+- Make it personalized to their trajectory, NOT generic
+- Examples: "Eyeing Director roles or staying hands-on?" / "Thinking platform engineering or broader infra leadership?"
 
-PERSONALIZATION VARIATIONS - Choose what to emphasize based on the candidate:
-- Tenure at current company (if notable)
-- Company growth phase or industry trends
-- Unique skill combinations they've built
-- Career pivots or transitions they've made
-- Specific domain expertise
-- Leadership progression
-- Cross-functional experience
-- Industry specialization
+TRANSITION TO BLOGS (pick ONE, vary it):
+- "Found a few pieces that might resonate:"
+- "Sharing some reads I thought you'd find useful:"
+- "Here's what caught my eye for you:"
+- "Thought these might be relevant:"
+- "Came across these and thought of you:"
+- "A few articles worth checking out:"
 
-CAREER QUESTION VARIATIONS - Make them specific to their situation:
-- "Deepening in [X] vs. exploring [Y] leadership?"
-- "Staying in [industry] or eyeing [adjacent space]?"
-- "Thinking about IC track vs. management?"
-- "Next step: [specific role A] or [specific role B]?"
-- "Curious about [specific challenge] in your space?"
+BLOG SECTION FORMAT (EXACT HTML STRUCTURE REQUIRED):
+---
+<div style="margin-bottom: 24px;">
+  <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; margin-bottom: 12px;">
+  <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none;">[BLOG_TITLE]</a>
+  <p style="margin-top: 8px; font-size: 14px; color: #6b7280; line-height: 1.6;">[ONE SENTENCE explaining WHY this matters to THEM specifically]</p>
+</div>
 
-CLOSING VARIATIONS - Mix it up:
-- "grab 15 minutes to chat about..."
-- "compare notes on [specific topic]..."
-- "quick call about where you're headed..."
-- "coffee chat about [relevant subject]..."
+[Repeat for each blog]
+---
+
+CLOSING (1 sentence + sign-off):
+Vary your closing offer:
+- "Happy to chat if you're exploring what's next."
+- "Let me know if you want to compare notes on [topic]."
+- "Hit me up if you're thinking about next steps."
+- "Always down to brainstorm your next move."
+
+Sign-off: "Best,"
 
 CRITICAL RULES:
-- NO subject line
-- NO specific name signature - just "Best,"
-- Each blog MUST explain WHY it's relevant to THEM
-- Be conversational, warm, but professional
-- 4-5 paragraphs total
-- VARY your approach - don't sound formulaic!"""
+- NO subject line in body
+- NO signature name - just "Best,"
+- Total length: 2-3 paragraphs + structured blog section + 1 closing sentence
+- Use HTML formatting for blog section EXACTLY as shown
+- VARY your structure and wording dramatically between emails
+- If featured_image is missing/null, use a placeholder: "https://via.placeholder.com/600x300/2563eb/ffffff?text=Blog+Post"
+- Keep it conversational and punchy, not flowery"""
 
     try:
         response = openai_client.chat.completions.create(
@@ -390,8 +399,8 @@ CRITICAL RULES:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": email_context}
             ],
-            temperature=0.8,
-            max_tokens=800
+            temperature=0.85,
+            max_tokens=1200
         )
 
         email_body = response.choices[0].message.content.strip()
@@ -458,6 +467,7 @@ def format_blog_response(blogs):
         {
             'title': blog['blog_title'],
             'url': blog['blog_url'],
+            'featured_image': blog.get('blog_featured_image', ''),
             'relevance': round(blog.get('max_similarity', 0) * 100, 1),
             'author': blog.get('blog_author', ''),
             'excerpt': blog.get('best_matching_chunk', '')[:200] + '...'

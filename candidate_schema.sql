@@ -72,6 +72,9 @@ USING hnsw (embedding vector_cosine_ops);
 -- Function: search_blogs_for_candidate
 -- Find relevant blog posts for a candidate based on their profile embedding
 -- ============================================================================
+-- Drop the old function first to allow return type change
+DROP FUNCTION IF EXISTS search_blogs_for_candidate(vector, float, int);
+
 CREATE OR REPLACE FUNCTION search_blogs_for_candidate(
     candidate_embedding vector(1536),
     match_threshold float DEFAULT 0.65,
@@ -83,6 +86,7 @@ RETURNS TABLE (
     blog_url text,
     blog_author text,
     blog_published_date text,
+    blog_featured_image text,
     chunk_text text,
     similarity float
 )
@@ -96,6 +100,7 @@ BEGIN
         bp.url as blog_url,
         bp.author as blog_author,
         bp.published_date as blog_published_date,
+        bp.featured_image as blog_featured_image,
         bc.chunk_text,
         1 - (bc.embedding <=> candidate_embedding) as similarity
     FROM blog_chunks bc
@@ -111,6 +116,9 @@ $$;
 -- Function: search_top_blogs_for_candidate (deduplicated by blog post)
 -- Returns unique blog posts ranked by best matching chunk
 -- ============================================================================
+-- Drop the old function first to allow return type change
+DROP FUNCTION IF EXISTS search_top_blogs_for_candidate(vector, float, int);
+
 CREATE OR REPLACE FUNCTION search_top_blogs_for_candidate(
     candidate_embedding vector(1536),
     match_threshold float DEFAULT 0.65,
@@ -122,6 +130,7 @@ RETURNS TABLE (
     blog_url text,
     blog_author text,
     blog_published_date text,
+    blog_featured_image text,
     best_matching_chunk text,
     max_similarity float
 )
@@ -131,11 +140,12 @@ BEGIN
     RETURN QUERY
     WITH ranked_chunks AS (
         SELECT
-            bp.id as blog_post_id,
-            bp.title as blog_title,
-            bp.url as blog_url,
-            bp.author as blog_author,
-            bp.published_date as blog_published_date,
+            bp.id,
+            bp.title,
+            bp.url,
+            bp.author,
+            bp.published_date,
+            bp.featured_image,
             bc.chunk_text,
             1 - (bc.embedding <=> candidate_embedding) as similarity,
             ROW_NUMBER() OVER (PARTITION BY bp.id ORDER BY bc.embedding <=> candidate_embedding) as rn
@@ -144,16 +154,17 @@ BEGIN
         WHERE 1 - (bc.embedding <=> candidate_embedding) > match_threshold
     )
     SELECT
-        blog_post_id,
-        blog_title,
-        blog_url,
-        blog_author,
-        blog_published_date,
-        chunk_text as best_matching_chunk,
-        similarity as max_similarity
-    FROM ranked_chunks
-    WHERE rn = 1
-    ORDER BY similarity DESC
+        rc.id as blog_post_id,
+        rc.title as blog_title,
+        rc.url as blog_url,
+        rc.author as blog_author,
+        rc.published_date as blog_published_date,
+        rc.featured_image as blog_featured_image,
+        rc.chunk_text as best_matching_chunk,
+        rc.similarity as max_similarity
+    FROM ranked_chunks rc
+    WHERE rc.rn = 1
+    ORDER BY rc.similarity DESC
     LIMIT match_count;
 END;
 $$;
@@ -163,7 +174,10 @@ $$;
 -- Function: get_candidate_profile_with_embedding
 -- Retrieve candidate profile along with their embedding
 -- ============================================================================
-CREATE OR REPLACE FUNCTION get_candidate_profile_with_embedding(
+-- Drop the old function first to allow return type change
+DROP FUNCTION IF EXISTS get_candidate_profile_with_embedding(text);
+
+CREATE FUNCTION get_candidate_profile_with_embedding(
     candidate_external_id text
 )
 RETURNS TABLE (
@@ -172,10 +186,20 @@ RETURNS TABLE (
     full_name text,
     email text,
     current_title text,
+    current_company text,
+    location text,
     about_me text,
     skills jsonb,
+    -- Legacy fields (kept for backwards compatibility)
     embedding_text text,
-    embedding vector(1536)
+    embedding vector(1536),
+    -- New three-field structure
+    professional_summary text,
+    professional_summary_embedding vector(1536),
+    job_preferences text,
+    job_preferences_embedding vector(1536),
+    interests text,
+    interests_embedding vector(1536)
 )
 LANGUAGE plpgsql
 AS $$
@@ -187,10 +211,20 @@ BEGIN
         cp.full_name,
         cp.email,
         cp.current_title,
+        cp.current_company,
+        cp.location,
         cp.about_me,
         cp.skills,
+        -- Legacy
         ce.embedding_text,
-        ce.embedding
+        ce.embedding,
+        -- New fields
+        ce.professional_summary,
+        ce.professional_summary_embedding,
+        ce.job_preferences,
+        ce.job_preferences_embedding,
+        ce.interests,
+        ce.interests_embedding
     FROM candidate_profiles cp
     LEFT JOIN candidate_embeddings ce ON cp.id = ce.candidate_profile_id
     WHERE cp.candidate_id = candidate_external_id;

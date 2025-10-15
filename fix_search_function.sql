@@ -1,6 +1,9 @@
 -- Fix the search_top_blogs_for_candidate function
 -- Run this in Supabase SQL Editor
 
+-- Drop the old function first to allow return type change
+DROP FUNCTION IF EXISTS search_top_blogs_for_candidate(vector, float, int);
+
 CREATE OR REPLACE FUNCTION search_top_blogs_for_candidate(
     candidate_embedding vector(1536),
     match_threshold float DEFAULT 0.65,
@@ -12,6 +15,7 @@ RETURNS TABLE (
     blog_url text,
     blog_author text,
     blog_published_date text,
+    blog_featured_image text,
     best_matching_chunk text,
     max_similarity float
 )
@@ -21,29 +25,31 @@ BEGIN
     RETURN QUERY
     WITH ranked_chunks AS (
         SELECT
-            bp.id as post_id,
-            bp.title as title,
-            bp.url as url,
-            bp.author as author,
-            bp.published_date as published_date,
-            bc.chunk_text as chunk,
-            1 - (bc.embedding <=> candidate_embedding) as sim,
+            bp.id,
+            bp.title,
+            bp.url,
+            bp.author,
+            bp.published_date,
+            bp.featured_image,
+            bc.chunk_text,
+            1 - (bc.embedding <=> candidate_embedding) as similarity,
             ROW_NUMBER() OVER (PARTITION BY bp.id ORDER BY bc.embedding <=> candidate_embedding) as rn
         FROM blog_chunks bc
         JOIN blog_posts bp ON bc.blog_post_id = bp.id
         WHERE 1 - (bc.embedding <=> candidate_embedding) > match_threshold
     )
     SELECT
-        rc.post_id,
-        rc.title,
-        rc.url,
-        rc.author,
-        rc.published_date,
-        rc.chunk,
-        rc.sim
+        rc.id as blog_post_id,
+        rc.title as blog_title,
+        rc.url as blog_url,
+        rc.author as blog_author,
+        rc.published_date as blog_published_date,
+        rc.featured_image as blog_featured_image,
+        rc.chunk_text as best_matching_chunk,
+        rc.similarity as max_similarity
     FROM ranked_chunks rc
     WHERE rc.rn = 1
-    ORDER BY rc.sim DESC
+    ORDER BY rc.similarity DESC
     LIMIT match_count;
 END;
 $$;

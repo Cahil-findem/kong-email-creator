@@ -310,9 +310,17 @@
         }
 
         .email-body {
-            white-space: pre-wrap;
             line-height: 1.6;
             color: #e0e0e0;
+        }
+
+        .email-body p {
+            margin: 10px 0;
+        }
+
+        .email-body img {
+            max-width: 100%;
+            height: auto;
         }
 
         .copy-btn {
@@ -692,7 +700,7 @@
 
             // Email
             document.getElementById('emailSubject').textContent = email.subject;
-            document.getElementById('emailBody').textContent = email.body;
+            document.getElementById('emailBody').innerHTML = email.body;
 
             // Show result
             result.classList.add('active');
@@ -717,8 +725,10 @@
         // Copy to clipboard (uses current edited content)
         copyBtn.addEventListener('click', () => {
             const subject = document.getElementById('emailSubject').innerText.trim();
-            const body = document.getElementById('emailBody').innerText.trim();
-            const fullEmail = `Subject: ${subject}\n\n${body}`;
+            const emailBodyElement = document.getElementById('emailBody');
+            // Get HTML content for copying (preserves formatting)
+            const bodyHtml = emailBodyElement.innerHTML;
+            const fullEmail = `Subject: ${subject}\n\n${bodyHtml}`;
 
             navigator.clipboard.writeText(fullEmail).then(() => {
                 const originalText = copyBtn.textContent;
