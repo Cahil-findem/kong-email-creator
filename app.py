@@ -305,92 +305,128 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
     current_title = candidate_info.get('current_title', '')
     current_company = candidate_info.get('current_company', '')
 
+    # Extract and format work history
+    work_exp = candidate_info.get('work_experience', [])
+    work_history_formatted = []
+    if work_exp and isinstance(work_exp, list):
+        for exp in work_exp[:3]:  # Top 3 positions
+            if isinstance(exp, dict):
+                company_name = exp.get('company', {}).get('name', '') if isinstance(exp.get('company'), dict) else exp.get('company', '')
+                job_title = exp.get('title', '')
+                if company_name and job_title:
+                    work_history_formatted.append(f"{company_name}: {job_title}")
+
+    work_history_str = '\n'.join(work_history_formatted) if work_history_formatted else f"{current_company}: {current_title}"
+
+    # Split semantic_summary into its three components
+    # semantic_summary is combined_summary which contains: professional_summary + job_preferences + interests
+    summary_parts = semantic_summary.split('\n\n', 2)
+    professional_summary = summary_parts[0] if len(summary_parts) > 0 else semantic_summary
+    job_preferences = summary_parts[1] if len(summary_parts) > 1 else ''
+    professional_interests = summary_parts[2] if len(summary_parts) > 2 else ''
+
     # Format blog posts for LLM
     blog_list = []
     for blog in blog_recommendations:
         blog_list.append({
             'title': blog['blog_title'],
             'url': blog['blog_url'],
-            'featured_image': blog.get('blog_featured_image', ''),
+            'featured_image': blog.get('blog_featured_image', 'https://via.placeholder.com/600x300/2563eb/ffffff?text=Blog+Post'),
             'excerpt': blog.get('best_matching_chunk', '')[:200]
         })
 
-    # Build context for email generation
-    email_context = f"""
-Candidate Name: {name}
+    # Build context for email generation (using clearer variable names)
+    email_context = f"""Candidate Name: {name}
 Current Role: {current_title} at {current_company}
-Semantic Summary: {semantic_summary}
+
+Professional Summary:
+{professional_summary}
+
+Job Preferences:
+{job_preferences}
+
+Professional Interests:
+{professional_interests}
+
+Work History:
+{work_history_str}
 
 Recommended Blog Posts:
 {json.dumps(blog_list, indent=2)}
 """
 
     # Use LLM to generate the email
-    system_prompt = """You are a thoughtful, relationship-focused recruiter writing personalized nurture emails. Your emails should feel warm, natural, and genuinely interested in the candidate as a person.
+    system_prompt = """You are writing a warm, personal email to someone in your professional network — like reaching out to a talented friend or former colleague you genuinely respect.
 
-CRITICAL: Make each email UNIQUE. Vary your structure, tone, and approach. Sound like a real human reaching out, not a template.
+Your goal is to make this feel like a real, thoughtful message from someone who's been thinking about them and their career.
 
-LENGTH: Keep emails SHORT and impactful - 2-3 tight paragraphs before the blog section.
+TONE & STYLE:
+- Warm, genuine, and conversational — like talking to someone you actually know
+- Friendly but still professional — you're a peer who cares about their growth
+- Personal touches matter — reference specific things about THEIR journey
+- Sound human, not corporate
+- No emojis, but you can be warm and friendly in your language
 
-OPENING VARIATIONS (pick ONE approach that fits the candidate - VARY WILDLY):
-1. **The Warm Check-in**: "Hey [Name], hope you're doing well! I've been meaning to reach out..."
-2. **The Tenure Hook**: "[X] years at [Company]? That's impressive staying power in [industry]."
-3. **The Transition**: "Congrats on the move to [Company]! [Specific observation about the change]."
-4. **The Career Pattern**: "I noticed your progression from [X] → [Y] → [Z]..."
-5. **The Personal**: "Hi [Name] - saw your background in [domain] and thought you'd appreciate..."
-6. **The Question Lead**: "Still loving [Company]? Curious where you're headed next."
-7. **The Industry Connect**: "As someone building in [industry/domain], wanted to share..."
-8. **The Direct**: "[Name], been following your career in [specialty]..."
-9. **The Friendly**: "Hope [Company] is treating you well! Quick note..."
-10. **The Observant**: "I see you've been at [Company] since [time period] - that's a solid run..."
+STRUCTURE:
+- Total length: Under 180 words (excluding blog section)
+- ALWAYS start with a greeting using their first name: "Hi [Name]," or "Hey [Name],"
+- FIRST PARAGRAPH: A warm, personal observation about something specific in their background (1-2 sentences max)
+- SECOND PARAGRAPH: Ask a genuine question that shows you care about their path forward (1-2 sentences)
+- THIRD PARAGRAPH: Share the blogs as "came across these and thought of you"
+- Close with one warm, inviting sentence
 
-TONE RULES:
-- Sound like you're writing to a friend-of-a-friend, not a cold prospect
-- Use contractions (you're, I've, that's)
-- Be conversational, not corporate
-- Show you've actually looked at their profile
+OPENING EXAMPLES (break into TWO paragraphs — ALWAYS include greeting):
 
-MIDDLE SECTION (1-2 sentences max):
-- Ask ONE specific forward-looking question about their career
-- Make it personalized to their trajectory, NOT generic
-- Examples: "Eyeing Director roles or staying hands-on?" / "Thinking platform engineering or broader infra leadership?"
+Example 1:
+"Hi [Name], I've been thinking about your trajectory from [Company] to [Company] — the way you've built expertise in [domain] is really impressive.
 
-TRANSITION TO BLOGS (pick ONE, vary it):
-- "Found a few pieces that might resonate:"
-- "Sharing some reads I thought you'd find useful:"
-- "Here's what caught my eye for you:"
-- "Thought these might be relevant:"
-- "Came across these and thought of you:"
-- "A few articles worth checking out:"
+I'm curious — as you think about what's next, are you leaning more toward [direction A] or staying deep in [current area]?"
 
-BLOG SECTION FORMAT (EXACT HTML STRUCTURE REQUIRED):
----
+Example 2:
+"Hey [Name], your background in [domain] caught my attention, especially [specific thing].
+
+What's pulling you forward right now — [aspect A] or [aspect B]?"
+
+Example 3:
+"Hi [Name], I noticed you've been at [Company] for [X time] working on [domain] — that's a meaningful commitment.
+
+Have you been thinking about [next level/direction], or are you still loving [current focus]?"
+
+QUESTION EXAMPLES (sound genuinely curious):
+- "I'm curious — as you think about what's next, are you leaning more toward [direction A] or staying deep in [current area]?"
+- "What's pulling you forward right now — [aspect A] or [aspect B]?"
+- "Have you been thinking about [next level/direction], or are you still loving [current focus]?"
+
+BLOG TRANSITION (make it natural):
+- "I came across a few pieces recently and thought they might resonate with you:"
+- "Thought you might find these interesting given your work in [domain]:"
+- "Been reading a few things that reminded me of you:"
+
+BLOG SECTION FORMAT (keep this HTML structure exactly):
 <div style="margin-bottom: 24px;">
   <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; margin-bottom: 12px;">
   <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none;">[BLOG_TITLE]</a>
-  <p style="margin-top: 8px; font-size: 14px; color: #6b7280; line-height: 1.6;">[ONE SENTENCE explaining WHY this matters to THEM specifically]</p>
+  <p style="margin-top: 8px; font-size: 14px; color: #6b7280; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
 </div>
 
-[Repeat for each blog]
----
+[Repeat for each blog - use featured_image from blog data, or placeholder if missing]
 
-CLOSING (1 sentence + sign-off):
-Vary your closing offer:
-- "Happy to chat if you're exploring what's next."
-- "Let me know if you want to compare notes on [topic]."
-- "Hit me up if you're thinking about next steps."
-- "Always down to brainstorm your next move."
+CLOSING EXAMPLES (warm and genuine):
+- "Would love to catch up sometime if you're open to it — always enjoy talking shop."
+- "If you ever want to grab coffee (virtual or otherwise) and talk through next steps, I'm here."
+- "Let's connect soon — I'd love to hear what you're thinking about."
+- "Happy to be a sounding board anytime if you want to chat about where things are headed."
 
 Sign-off: "Best,"
 
 CRITICAL RULES:
-- NO subject line in body
-- NO signature name - just "Best,"
-- Total length: 2-3 paragraphs + structured blog section + 1 closing sentence
+- NO subject line in the email body (will be generated separately)
+- NO signature name after "Best," - just "Best,"
+- Under 180 words before blog section
+- Sound like a real person reaching out, not a templated message
 - Use HTML formatting for blog section EXACTLY as shown
-- VARY your structure and wording dramatically between emails
-- If featured_image is missing/null, use a placeholder: "https://via.placeholder.com/600x300/2563eb/ffffff?text=Blog+Post"
-- Keep it conversational and punchy, not flowery"""
+- Make blog justifications PERSONAL to this specific person
+- Each email should feel like it was written just for them"""
 
     try:
         response = openai_client.chat.completions.create(
@@ -406,15 +442,18 @@ CRITICAL RULES:
         email_body = response.choices[0].message.content.strip()
 
         # Generate subject line separately for better control
-        subject_prompt = f"""Generate a warm, conversational email subject line for {first_name}, a {current_title} at {current_company}.
+        subject_prompt = f"""Generate a warm, personal subject line for {first_name}, a {current_title} at {current_company}.
 
-Style examples to match:
-- "How's [Company] treating you, [Name]?"
-- "Quick check-in about your next move"
-- "Thought you'd find these interesting"
-- "[Name], curious where you're headed next"
+It should feel like you're reaching out to someone you know and respect — personal, not salesy.
 
-Be creative and personal. Under 60 characters. No quotes."""
+Style examples:
+- "Been thinking about your next move, {first_name}"
+- "{first_name}, would love to hear what's next for you"
+- "Thought of you when I saw these, {first_name}"
+- "Curious where you're headed next, {first_name}"
+- "{first_name}, wanted to reach out"
+
+Keep it under 60 characters, no quotation marks, use title case."""
 
         subject_response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
