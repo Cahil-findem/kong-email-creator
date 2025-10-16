@@ -550,14 +550,16 @@ BLOG TRANSITION (make it natural):
 - "Thought you might find these interesting given your work in [domain]:"
 - "Been reading a few things that reminded me of you:"
 
-BLOG SECTION FORMAT (keep this HTML structure exactly - horizontal layout with image on left):
-<div style="display: flex; gap: 16px; margin-bottom: 24px; align-items: flex-start;">
-  <a href="[BLOG_URL]" style="flex-shrink: 0;">
-    <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 200px; height: 120px; object-fit: cover; border-radius: 8px;">
-  </a>
-  <div style="flex: 1; min-width: 0;">
-    <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none; display: block; margin-bottom: 8px;">[BLOG_TITLE]</a>
-    <p style="margin: 0; font-size: 14px; color: #6b7280; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
+BLOG SECTION FORMAT (keep this HTML structure exactly - justification first, then image and title):
+<div style="margin-bottom: 24px;">
+  <p style="margin: 0 0 12px 0; font-size: 14px; color: #374151; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
+  <div style="display: flex; gap: 16px; align-items: flex-start;">
+    <a href="[BLOG_URL]" style="flex-shrink: 0;">
+      <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 200px; height: 120px; object-fit: cover; border-radius: 8px;">
+    </a>
+    <div style="flex: 1; min-width: 0;">
+      <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none; display: block;">[BLOG_TITLE]</a>
+    </div>
   </div>
 </div>
 
