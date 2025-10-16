@@ -552,8 +552,8 @@ BLOG TRANSITION (make it natural):
 
 BLOG SECTION FORMAT (keep this HTML structure exactly - justification first, then image and title):
 <div style="margin-bottom: 24px;">
-  <p style="margin: 0 0 12px 0; font-size: 14px; color: #374151; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
-  <div style="display: flex; gap: 16px; align-items: flex-start;">
+  <p style="margin: 0 0 12px 0; font-size: 16px; color: #1f2937; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
+  <div style="display: flex; gap: 16px; align-items: flex-start; margin: 0; padding: 0;">
     <a href="[BLOG_URL]" style="flex-shrink: 0;">
       <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 200px; height: 120px; object-fit: cover; border-radius: 8px;">
     </a>
