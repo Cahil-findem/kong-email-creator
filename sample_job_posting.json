@@ -1,0 +1,65 @@
+{
+  "position": "Senior Software Engineer - Insomnia Team",
+  "company": "Kong Inc.",
+  "location": {
+    "city": "Toronto",
+    "country": "Canada",
+    "type": "Remote"
+  },
+  "employment": {
+    "type": "Full time",
+    "department": "All Cost Center R&D ENG"
+  },
+  "compensation": {
+    "currency": "CAD",
+    "min": 144800,
+    "max": 202800,
+    "range_formatted": "CA$144.8K – CA$202.8K",
+    "notes": [
+      "Different base pay ranges for different work locations within the United States and Canada",
+      "Compensation varies based on candidate location, role, skill set and level of experience",
+      "Certain roles eligible for sales incentives",
+      "Benefits may vary by location",
+      "US employees typically offered healthcare benefits, 401(k), disability benefits, life and AD&D insurance"
+    ]
+  },
+  "about_role": "As a Senior Software Engineer on the Insomnia team at Kong, you'll be working with a globally distributed team responsible for building the desktop Insomnia application, the accompanying insomnia CLI, and other adjacent products.",
+  "responsibilities": [
+    "Work with a global team of engineers, designers, and leaders to create meaningful product experiences",
+    "Engage with the Insomnia open source community",
+    "Help maintain strong and healthy engineering standards by engaging in discussions, reviewing decisions and pull requests",
+    "Additional minor responsibilities necessary to build a great product in a small team"
+  ],
+  "requirements": {
+    "must_have": [
+      "Strong coding skills with emphasis on building understandable and maintainable software while collaborating with others",
+      "Strong written and verbal communication skills, evident in technical specifications, discourse, and quality of feedback",
+      "Empathy for teammates and end users, reflected in product usability, code quality, and collaboration",
+      "Enthusiasm to learn and expand knowledge"
+    ],
+    "nice_to_have": [
+      "Understanding of building software outside the web sandbox",
+      "Experience with platform-specific engineering (e.g., Electron)"
+    ]
+  },
+  "about_company": {
+    "name": "Kong Inc.",
+    "description": "A leading developer of cloud API technologies on a mission to enable companies around the world to become 'API-first' and securely accelerate AI adoption",
+    "mission": "Help organizations globally — from startups to Fortune 500 enterprises — unleash developer productivity, build securely, and accelerate time to market",
+    "products": {
+      "insomnia": {
+        "description": "Full-lifecycle API development platform",
+        "acquired": 2019,
+        "status": "Integral part of Kong's product portfolio"
+      }
+    },
+    "website": "www.konghq.com",
+    "social": {
+      "twitter": "@thekonginc"
+    }
+  },
+  "metadata": {
+    "posting_code": "LI-SV1",
+    "application_link": "https://jobs.ashbyhq.com/kong/40d0693f-2727-4662-9e1c-86c80581292a?departmentId=4c0c0955-de6f-4ad9-ba01-efc8d358905c"
+  }
+}

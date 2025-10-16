@@ -8,6 +8,7 @@ from flask_cors import CORS
 import os
 import json
 import logging
+import numpy as np
 from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client
@@ -295,9 +296,111 @@ def filter_diverse_blogs(blog_matches, count=3):
     return top_blogs
 
 
-def generate_email_content(candidate_info, blog_recommendations, semantic_summary):
+def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
+    """
+    Internal: Match candidate to open job postings using semantic similarity
+    Returns: list of matching jobs (max 2 best matches)
+    """
+    try:
+        logger.info(f"Matching candidate {candidate_id} to open jobs...")
+
+        # Get candidate embedding
+        candidate_profile = matcher.get_candidate_by_id(candidate_id)
+        if not candidate_profile:
+            logger.warning(f"Candidate {candidate_id} not found")
+            return []
+
+        # Get professional summary embedding (primary matching signal)
+        prof_embedding = candidate_profile.get('professional_summary_embedding')
+        if not prof_embedding:
+            # Fallback to legacy embedding
+            prof_embedding = candidate_profile.get('embedding')
+
+        if not prof_embedding:
+            logger.warning(f"No embedding found for candidate {candidate_id}")
+            return []
+
+        # Get all active jobs
+        supabase = matcher.supabase
+        active_jobs = supabase.table('job_postings')\
+            .select('*')\
+            .eq('status', 'active')\
+            .execute()
+
+        if not active_jobs.data:
+            logger.info("No active jobs found")
+            return []
+
+        logger.info(f"Found {len(active_jobs.data)} active jobs")
+
+        # Generate embeddings for job descriptions and calculate similarity
+        job_matches = []
+        for job in active_jobs.data:
+            # Create comprehensive job text for matching
+            job_text = f"{job['position']}\n{job['about_role']}"
+
+            # Add requirements if available
+            if job.get('requirements'):
+                reqs = json.loads(job['requirements']) if isinstance(job['requirements'], str) else job['requirements']
+                must_have = reqs.get('must_have', [])
+                if must_have:
+                    job_text += f"\n\nRequired: {', '.join(must_have[:5])}"
+
+            # Generate embedding for job
+            job_embedding_response = openai_client.embeddings.create(
+                model="text-embedding-3-small",
+                input=job_text
+            )
+            job_embedding = job_embedding_response.data[0].embedding
+
+            # Calculate cosine similarity
+            prof_vec = np.array(prof_embedding)
+            job_vec = np.array(job_embedding)
+            similarity = np.dot(prof_vec, job_vec) / (np.linalg.norm(prof_vec) * np.linalg.norm(job_vec))
+
+            if similarity >= match_threshold:
+                job_matches.append({
+                    'job_id': job['job_id'],
+                    'position': job['position'],
+                    'company': job['company'],
+                    'location_type': job['location_type'],
+                    'location_city': job['location_city'],
+                    'location_country': job['location_country'],
+                    'compensation_currency': job['compensation_currency'],
+                    'compensation_min': job['compensation_min'],
+                    'compensation_max': job['compensation_max'],
+                    'about_role': job['about_role'],
+                    'application_link': job['application_link'],
+                    'similarity': float(similarity)
+                })
+
+        # Sort by similarity and return top 2 matches
+        job_matches.sort(key=lambda x: x['similarity'], reverse=True)
+        top_matches = job_matches[:2]
+
+        if top_matches:
+            logger.info(f"Found {len(top_matches)} job matches for candidate")
+            for job in top_matches:
+                logger.info(f"  - {job['position']} (similarity: {job['similarity']:.2%})")
+        else:
+            logger.info("No job matches met the threshold")
+
+        return top_matches
+
+    except Exception as e:
+        logger.error(f"Error matching candidate to jobs: {str(e)}", exc_info=True)
+        return []
+
+
+def generate_email_content(candidate_info, blog_recommendations, semantic_summary, job_matches=None):
     """
     Internal: Generate personalized nurture email using LLM
+
+    Args:
+        candidate_info: Candidate profile information
+        blog_recommendations: List of matching blog posts
+        semantic_summary: Combined candidate summaries
+        job_matches: Optional list of matching job openings
     """
     # Extract candidate details
     name = candidate_info.get('full_name', 'there')
@@ -335,6 +438,21 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
             'excerpt': blog.get('best_matching_chunk', '')[:200]
         })
 
+    # Format job matches if available
+    job_list = []
+    if job_matches:
+        for job in job_matches:
+            job_list.append({
+                'position': job['position'],
+                'company': job.get('company', ''),
+                'location_type': job.get('location_type', ''),
+                'location': f"{job.get('location_city', '')}, {job.get('location_country', '')}".strip(', '),
+                'compensation': f"{job.get('compensation_currency', '')} {job.get('compensation_min', 0):,.0f} - {job.get('compensation_max', 0):,.0f}",
+                'about_role': job.get('about_role', '')[:250],
+                'application_link': job.get('application_link', ''),
+                'match_score': f"{job.get('similarity', 0) * 100:.0f}%"
+            })
+
     # Build context for email generation (using clearer variable names)
     email_context = f"""Candidate Name: {name}
 Current Role: {current_title} at {current_company}
@@ -350,6 +468,9 @@ Professional Interests:
 
 Work History:
 {work_history_str}
+
+Matching Job Openings (if any):
+{json.dumps(job_list, indent=2) if job_list else 'No matching jobs found'}
 
 Recommended Blog Posts:
 {json.dumps(blog_list, indent=2)}
@@ -368,10 +489,11 @@ TONE & STYLE:
 - No emojis, but you can be warm and friendly in your language
 
 STRUCTURE:
-- Total length: Under 180 words (excluding blog section)
+- Total length: Under 180 words (excluding job/blog sections)
 - GREETING LINE: ALWAYS start with a greeting on its own line using their first name: "Hi [Name]," or "Hey [Name],"
 - FIRST PARAGRAPH: A warm, personal observation about something specific in their background (1-2 sentences max)
 - SECOND PARAGRAPH: Ask a genuine question that shows you care about their path forward (1-2 sentences)
+- **IF MATCHING JOBS EXIST**: Present job openings naturally before blogs (see JOB SECTION FORMAT below)
 - THIRD PARAGRAPH: Share the blogs as "came across these and thought of you"
 - Close with one warm, inviting sentence
 
@@ -403,8 +525,27 @@ QUESTION EXAMPLES (sound genuinely curious):
 - "What's pulling you forward right now — [aspect A] or [aspect B]?"
 - "Have you been thinking about [next level/direction], or are you still loving [current focus]?"
 
+**JOB SECTION** (ONLY include if matching jobs are provided in context):
+- If the context includes "Matching Job Openings" with actual job data, present them naturally and warmly
+- Never mention jobs if no matches exist
+- Transition naturally: "By the way, I noticed we have a couple of openings that might align with where you're headed:"
+- Keep it conversational, not salesy
+- After jobs, transition to blogs with: "I also came across a few pieces recently..."
+
+JOB SECTION FORMAT (use this HTML structure for each job):
+<div style="padding: 20px; background: #f9fafb; border-left: 4px solid #2563eb; margin-bottom: 20px; border-radius: 4px;">
+  <h3 style="margin: 0 0 8px 0; font-size: 18px; color: #1f2937;">
+    <a href="[APPLICATION_LINK]" style="color: #2563eb; text-decoration: none;">[POSITION_TITLE]</a>
+  </h3>
+  <p style="margin: 4px 0; font-size: 14px; color: #6b7280;">[LOCATION_TYPE] • [COMPENSATION]</p>
+  <p style="margin: 12px 0 0 0; font-size: 14px; color: #374151; line-height: 1.6;">[One personal sentence about why this role could be a good fit for them based on their background]</p>
+</div>
+
+[Repeat for up to 2 jobs max]
+
 BLOG TRANSITION (make it natural):
-- "I came across a few pieces recently and thought they might resonate with you:"
+- If jobs were mentioned: "I also came across a few pieces recently that reminded me of you:"
+- If no jobs: "I came across a few pieces recently and thought they might resonate with you:"
 - "Thought you might find these interesting given your work in [domain]:"
 - "Been reading a few things that reminded me of you:"
 
@@ -432,10 +573,12 @@ Sign-off: "Best,"
 CRITICAL RULES:
 - NO subject line in the email body (will be generated separately)
 - NO signature name after "Best," - just "Best,"
-- Under 180 words before blog section
+- Under 180 words before job/blog sections
 - Sound like a real person reaching out, not a templated message
-- Use HTML formatting for blog section EXACTLY as shown
-- Make blog justifications PERSONAL to this specific person
+- Use HTML formatting for job and blog sections EXACTLY as shown
+- ONLY include job section if matching jobs exist in the context
+- NEVER mention jobs if context says "No matching jobs found"
+- Make both job and blog justifications PERSONAL to this specific person
 - Each email should feel like it was written just for them"""
 
     try:
@@ -603,11 +746,15 @@ def process_candidate():
         if not top_blogs:
             return jsonify({'error': 'No matching blog posts found.'}), 404
 
+        # Step 4.5: Match candidate to open jobs
+        logger.info("Matching candidate to open jobs...")
+        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35)
+
         # Step 5: Generate email (use combined context)
         logger.info("Generating email...")
         # Combine all three summaries for email generation context
         combined_summary = f"{summaries['professional_summary']}\n\n{summaries['job_preferences']}\n\n{summaries['interests']}"
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches)
 
         # Return response
         response = {
@@ -623,6 +770,7 @@ def process_candidate():
             'professional_summary': summaries['professional_summary'],
             'job_preferences': summaries['job_preferences'],
             'interests': summaries['interests'],
+            'job_matches': job_matches if job_matches else [],  # Matching job openings
             'blog_matches': format_blog_response(top_blogs),
             'email': email_content,
             'timestamp': datetime.now().isoformat()
@@ -873,9 +1021,13 @@ def generate_email():
         if not top_blogs:
             return jsonify({'error': 'No matching blog posts found.'}), 404
 
+        # Match candidate to open jobs
+        logger.info("Matching candidate to open jobs...")
+        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35)
+
         # Generate email
         logger.info("Generating email...")
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches)
 
         # Return response
         response = {
@@ -891,6 +1043,7 @@ def generate_email():
             'professional_summary': professional_summary,
             'job_preferences': job_preferences,
             'interests': interests,
+            'job_matches': job_matches if job_matches else [],  # Matching job openings
             'blog_matches': format_blog_response(top_blogs),
             'email': email_content,
             'timestamp': datetime.now().isoformat()
