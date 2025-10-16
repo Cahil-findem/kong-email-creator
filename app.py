@@ -296,15 +296,99 @@ def filter_diverse_blogs(blog_matches, count=3):
     return top_blogs
 
 
+def evaluate_job_match_with_llm(candidate_profile, job, semantic_similarity):
+    """
+    Use LLM to evaluate if candidate is a genuine match for the job
+    Returns: dict with is_match, confidence, reasoning, or None if evaluation fails
+    """
+    try:
+        # Extract candidate information
+        candidate_name = candidate_profile.get('full_name', 'Candidate')
+        candidate_title = candidate_profile.get('current_title', '')
+        candidate_summary = candidate_profile.get('professional_summary', '')
+        candidate_preferences = candidate_profile.get('job_preferences', '')
+
+        # Extract job information
+        job_title = job.get('position', '')
+        job_description = job.get('about_role', '')
+        job_requirements = job.get('requirements', {})
+
+        # Parse requirements if it's a string
+        if isinstance(job_requirements, str):
+            try:
+                job_requirements = json.loads(job_requirements)
+            except:
+                job_requirements = {}
+
+        must_have = job_requirements.get('must_have', []) if isinstance(job_requirements, dict) else []
+        nice_to_have = job_requirements.get('nice_to_have', []) if isinstance(job_requirements, dict) else []
+
+        # Build evaluation prompt
+        evaluation_prompt = f"""Evaluate if this candidate is a genuine match for this job opening.
+
+CANDIDATE:
+Name: {candidate_name}
+Current Title: {candidate_title}
+Professional Summary: {candidate_summary[:400]}
+Job Preferences: {candidate_preferences}
+
+JOB OPENING:
+Position: {job_title}
+About Role: {job_description[:400]}
+Must-Have Requirements: {', '.join(must_have[:5]) if must_have else 'Not specified'}
+Nice-to-Have: {', '.join(nice_to_have[:3]) if nice_to_have else 'Not specified'}
+
+Semantic Similarity Score: {semantic_similarity:.1%}
+
+EVALUATION CRITERIA:
+1. Role Type Match: Does the candidate's profession align with the job type? (Engineer vs Designer vs PM, etc.)
+2. Seniority Match: Does the candidate's level match the job level?
+3. Domain Expertise: Does the candidate have relevant domain knowledge?
+4. Required Skills: Does the candidate meet the must-have requirements?
+5. Career Trajectory: Would this be a logical next step for them?
+
+Respond ONLY with valid JSON in this exact format:
+{{
+  "is_match": true/false,
+  "confidence": "high/medium/low",
+  "match_score": 0-100,
+  "reasoning": "1-2 sentence explanation of why this is or isn't a match",
+  "key_alignments": ["alignment1", "alignment2"],
+  "concerns": ["concern1", "concern2"]
+}}
+
+Be strict: Only return is_match: true for candidates who would genuinely be qualified and interested in this specific role."""
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert technical recruiter evaluating candidate-job fit. Be precise and honest in your assessments."},
+                {"role": "user", "content": evaluation_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=300,
+            response_format={"type": "json_object"}
+        )
+
+        evaluation = json.loads(response.choices[0].message.content.strip())
+        return evaluation
+
+    except Exception as e:
+        logger.error(f"Error in LLM job evaluation: {str(e)}")
+        return None
+
+
 def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
     """
-    Internal: Match candidate to open job postings using semantic similarity
-    Returns: list of matching jobs (max 2 best matches)
+    Internal: Match candidate to open job postings using two-stage process:
+    1. Semantic similarity search (threshold: 35%)
+    2. LLM evaluation for genuine role fit
+    Returns: list of LLM-confirmed matching jobs (max 2 best matches)
     """
     try:
         logger.info(f"Matching candidate {candidate_id} to open jobs...")
 
-        # Get candidate embedding
+        # Get candidate embedding and profile
         candidate_profile = matcher.get_candidate_by_id(candidate_id)
         if not candidate_profile:
             logger.warning(f"Candidate {candidate_id} not found")
@@ -342,8 +426,10 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
 
         logger.info(f"Found {len(active_jobs.data)} active jobs")
 
-        # Generate embeddings for job descriptions and calculate similarity
-        job_matches = []
+        # STAGE 1: Semantic similarity search
+        logger.info("Stage 1: Running semantic similarity search...")
+        semantic_candidates = []
+
         for job in active_jobs.data:
             # Create comprehensive job text for matching
             job_text = f"{job['position']}\n{job['about_role']}"
@@ -368,21 +454,61 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
             similarity = np.dot(prof_vec, job_vec) / (np.linalg.norm(prof_vec) * np.linalg.norm(job_vec))
 
             if similarity >= match_threshold:
-                # Include ALL job data from database (including JSONB fields)
-                job_match = dict(job)  # Create a copy of the entire job object
-                job_match['similarity'] = float(similarity)  # Add similarity score
-                job_matches.append(job_match)
+                semantic_candidates.append({
+                    'job': job,
+                    'similarity': float(similarity)
+                })
 
-        # Sort by similarity and return top 2 matches
-        job_matches.sort(key=lambda x: x['similarity'], reverse=True)
-        top_matches = job_matches[:2]
+        logger.info(f"Stage 1 complete: {len(semantic_candidates)} jobs passed semantic threshold")
+
+        if not semantic_candidates:
+            logger.info("No jobs met semantic similarity threshold")
+            return []
+
+        # Sort by similarity
+        semantic_candidates.sort(key=lambda x: x['similarity'], reverse=True)
+
+        # STAGE 2: LLM evaluation for top candidates
+        logger.info("Stage 2: Running LLM evaluation on semantic matches...")
+        confirmed_matches = []
+
+        for candidate in semantic_candidates[:5]:  # Evaluate top 5 semantic matches
+            job = candidate['job']
+            similarity = candidate['similarity']
+
+            logger.info(f"  Evaluating: {job['position']} (semantic: {similarity:.2%})")
+
+            # Ask LLM to evaluate the match
+            evaluation = evaluate_job_match_with_llm(candidate_profile, job, similarity)
+
+            if evaluation and evaluation.get('is_match'):
+                # Include ALL job data from database (including JSONB fields)
+                job_match = dict(job)
+                job_match['similarity'] = similarity
+                job_match['llm_evaluation'] = {
+                    'confidence': evaluation.get('confidence', 'unknown'),
+                    'match_score': evaluation.get('match_score', 0),
+                    'reasoning': evaluation.get('reasoning', ''),
+                    'key_alignments': evaluation.get('key_alignments', []),
+                    'concerns': evaluation.get('concerns', [])
+                }
+                confirmed_matches.append(job_match)
+
+                logger.info(f"    ✅ CONFIRMED by LLM (confidence: {evaluation.get('confidence')})")
+                logger.info(f"    Reasoning: {evaluation.get('reasoning', '')[:100]}")
+            else:
+                reason = evaluation.get('reasoning', 'No match') if evaluation else 'Evaluation failed'
+                logger.info(f"    ❌ REJECTED by LLM: {reason[:100]}")
+
+        # Return top 2 LLM-confirmed matches
+        top_matches = confirmed_matches[:2]
 
         if top_matches:
-            logger.info(f"Found {len(top_matches)} job matches for candidate")
+            logger.info(f"Stage 2 complete: {len(top_matches)} jobs confirmed by LLM")
             for job in top_matches:
-                logger.info(f"  - {job['position']} (similarity: {job['similarity']:.2%})")
+                logger.info(f"  - {job['position']} (semantic: {job['similarity']:.2%}, LLM confidence: {job['llm_evaluation']['confidence']})")
         else:
-            logger.info("No job matches met the threshold")
+            logger.info("No jobs confirmed by LLM evaluation")
 
         return top_matches
 
