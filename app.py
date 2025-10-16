@@ -368,20 +368,10 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
             similarity = np.dot(prof_vec, job_vec) / (np.linalg.norm(prof_vec) * np.linalg.norm(job_vec))
 
             if similarity >= match_threshold:
-                job_matches.append({
-                    'job_id': job['job_id'],
-                    'position': job['position'],
-                    'company': job['company'],
-                    'location_type': job['location_type'],
-                    'location_city': job['location_city'],
-                    'location_country': job['location_country'],
-                    'compensation_currency': job['compensation_currency'],
-                    'compensation_min': job['compensation_min'],
-                    'compensation_max': job['compensation_max'],
-                    'about_role': job['about_role'],
-                    'application_link': job['application_link'],
-                    'similarity': float(similarity)
-                })
+                # Include ALL job data from database (including JSONB fields)
+                job_match = dict(job)  # Create a copy of the entire job object
+                job_match['similarity'] = float(similarity)  # Add similarity score
+                job_matches.append(job_match)
 
         # Sort by similarity and return top 2 matches
         job_matches.sort(key=lambda x: x['similarity'], reverse=True)
