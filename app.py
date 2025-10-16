@@ -764,11 +764,14 @@ def process_candidate():
             'professional_summary': summaries['professional_summary'],
             'job_preferences': summaries['job_preferences'],
             'interests': summaries['interests'],
-            'job_matches': job_matches if job_matches else [],  # Matching job openings
             'blog_matches': format_blog_response(top_blogs),
             'email': email_content,
             'timestamp': datetime.now().isoformat()
         }
+
+        # Only include job_matches if there are actual matches
+        if job_matches:
+            response['job_matches'] = job_matches
 
         logger.info("Successfully processed candidate with three-field embeddings!")
         return jsonify(response)
@@ -1037,11 +1040,14 @@ def generate_email():
             'professional_summary': professional_summary,
             'job_preferences': job_preferences,
             'interests': interests,
-            'job_matches': job_matches if job_matches else [],  # Matching job openings
             'blog_matches': format_blog_response(top_blogs),
             'email': email_content,
             'timestamp': datetime.now().isoformat()
         }
+
+        # Only include job_matches if there are actual matches
+        if job_matches:
+            response['job_matches'] = job_matches
 
         logger.info("Successfully generated email!")
         return jsonify(response)
