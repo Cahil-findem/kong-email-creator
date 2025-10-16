@@ -331,7 +331,7 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
         blog_list.append({
             'title': blog['blog_title'],
             'url': blog['blog_url'],
-            'featured_image': blog.get('blog_featured_image', 'https://via.placeholder.com/600x300/2563eb/ffffff?text=Blog+Post'),
+            'featured_image': blog.get('blog_featured_image', 'https://via.placeholder.com/200x120/2563eb/ffffff?text=Blog'),
             'excerpt': blog.get('best_matching_chunk', '')[:200]
         })
 
@@ -369,26 +369,32 @@ TONE & STYLE:
 
 STRUCTURE:
 - Total length: Under 180 words (excluding blog section)
-- ALWAYS start with a greeting using their first name: "Hi [Name]," or "Hey [Name],"
+- GREETING LINE: ALWAYS start with a greeting on its own line using their first name: "Hi [Name]," or "Hey [Name],"
 - FIRST PARAGRAPH: A warm, personal observation about something specific in their background (1-2 sentences max)
 - SECOND PARAGRAPH: Ask a genuine question that shows you care about their path forward (1-2 sentences)
 - THIRD PARAGRAPH: Share the blogs as "came across these and thought of you"
 - Close with one warm, inviting sentence
 
-OPENING EXAMPLES (break into TWO paragraphs — ALWAYS include greeting):
+OPENING EXAMPLES (greeting on its own line, then paragraphs):
 
 Example 1:
-"Hi [Name], I've been thinking about your trajectory from [Company] to [Company] — the way you've built expertise in [domain] is really impressive.
+"Hi [Name],
+
+I've been thinking about your trajectory from [Company] to [Company] — the way you've built expertise in [domain] is really impressive.
 
 I'm curious — as you think about what's next, are you leaning more toward [direction A] or staying deep in [current area]?"
 
 Example 2:
-"Hey [Name], your background in [domain] caught my attention, especially [specific thing].
+"Hey [Name],
+
+Your background in [domain] caught my attention, especially [specific thing].
 
 What's pulling you forward right now — [aspect A] or [aspect B]?"
 
 Example 3:
-"Hi [Name], I noticed you've been at [Company] for [X time] working on [domain] — that's a meaningful commitment.
+"Hi [Name],
+
+I noticed you've been at [Company] for [X time] working on [domain] — that's a meaningful commitment.
 
 Have you been thinking about [next level/direction], or are you still loving [current focus]?"
 
@@ -402,14 +408,18 @@ BLOG TRANSITION (make it natural):
 - "Thought you might find these interesting given your work in [domain]:"
 - "Been reading a few things that reminded me of you:"
 
-BLOG SECTION FORMAT (keep this HTML structure exactly):
-<div style="margin-bottom: 24px;">
-  <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; margin-bottom: 12px;">
-  <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none;">[BLOG_TITLE]</a>
-  <p style="margin-top: 8px; font-size: 14px; color: #6b7280; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
+BLOG SECTION FORMAT (keep this HTML structure exactly - horizontal layout with image on left):
+<div style="display: flex; gap: 16px; margin-bottom: 24px; align-items: flex-start;">
+  <a href="[BLOG_URL]" style="flex-shrink: 0;">
+    <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 200px; height: 120px; object-fit: cover; border-radius: 8px;">
+  </a>
+  <div style="flex: 1; min-width: 0;">
+    <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none; display: block; margin-bottom: 8px;">[BLOG_TITLE]</a>
+    <p style="margin: 0; font-size: 14px; color: #6b7280; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
+  </div>
 </div>
 
-[Repeat for each blog - use featured_image from blog data, or placeholder if missing]
+[Repeat for each blog - use featured_image from blog data, or use placeholder: https://via.placeholder.com/200x120/2563eb/ffffff?text=Blog]
 
 CLOSING EXAMPLES (warm and genuine):
 - "Would love to catch up sometime if you're open to it — always enjoy talking shop."
