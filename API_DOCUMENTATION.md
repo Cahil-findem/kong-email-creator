@@ -141,6 +141,21 @@ X-API-Key: your-secret-api-key (if authentication enabled)
     "company": "Acme Corp",
     "location": "San Francisco, CA, USA"
   },
+  "candidate_profile": {
+    "ref": "candidate_id_123",
+    "candidate": {
+      "full_name": "John Doe",
+      "about_me": "Experienced software engineer...",
+      "location": {
+        "city": "San Francisco",
+        "state": "CA",
+        "country": "USA"
+      }
+    },
+    "skills": ["Python", "JavaScript", "API Design", "PostgreSQL"],
+    "workexp": [...],
+    "education": [...]
+  },
   "professional_summary": "John Doe is a seasoned Senior Software Engineer with over 4 years of experience at Acme Corp, demonstrating deep expertise in backend development, API design, and database optimization. His career trajectory shows consistent growth in technical leadership and system architecture, with a strong focus on building scalable solutions.",
   "job_preferences": "Job Titles: Staff Software Engineer, Engineering Manager, Principal Engineer\nLocation: San Francisco Bay Area or Remote\nSeniority: Senior IC or Manager",
   "interests": "• API Architecture & Design\n• PostgreSQL Optimization\n• Microservices Patterns\n• Python Development\n• Cloud Infrastructure",
@@ -178,11 +193,15 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 }
 ```
 
-**Three-Field System Details:**
+**Response Field Details:**
 
+- **`candidate`**: Summary object with id, name, title, company, location
+- **`candidate_profile`**: Full raw candidate JSON (for external services)
 - **`professional_summary`**: Paragraph describing professional identity, expertise, and trajectory. Used for blog matching.
 - **`job_preferences`**: Structured format with Job Titles, Location, and Seniority preferences.
 - **`interests`**: Bulleted list of technologies, industries, and professional topics.
+- **`blog_matches`**: Array of relevant blog posts with titles, URLs, and relevance scores
+- **`email`**: Generated email with subject and body
 
 ---
 
@@ -275,6 +294,21 @@ X-API-Key: your-secret-api-key (if authentication enabled)
     "title": "Senior Software Engineer",
     "company": "Acme Corp",
     "location": "San Francisco, CA, USA"
+  },
+  "candidate_profile": {
+    "ref": "candidate_id_123",
+    "candidate": {
+      "full_name": "John Doe",
+      "about_me": "Experienced software engineer...",
+      "location": {
+        "city": "San Francisco",
+        "state": "CA",
+        "country": "USA"
+      }
+    },
+    "skills": ["Python", "JavaScript", "API Design", "PostgreSQL"],
+    "workexp": [...],
+    "education": [...]
   },
   "professional_summary": "John Doe is a seasoned Senior Software Engineer with over 4 years of experience...",
   "job_preferences": "Job Titles: Staff Software Engineer, Engineering Manager, Principal Engineer\nLocation: San Francisco Bay Area or Remote\nSeniority: Senior IC or Manager",

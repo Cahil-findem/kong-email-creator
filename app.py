@@ -772,7 +772,7 @@ def generate_email():
     Generate email for an existing candidate
 
     Flow:
-    1. Get candidate from DB
+    1. Get candidate from DB (including raw profile JSON)
     2. Match blogs using current embeddings
     3. Generate email
 
@@ -785,7 +785,10 @@ def generate_email():
     {
         "success": true,
         "candidate": { id, name, title, company, location },
-        "semantic_summary": "...",
+        "candidate_profile": { ... full raw candidate JSON ... },
+        "professional_summary": "...",
+        "job_preferences": "...",
+        "interests": "...",
         "blog_matches": [...],
         "email": { subject, body, ... },
         "timestamp": "..."
@@ -808,6 +811,16 @@ def generate_email():
         candidate_profile = matcher.get_candidate_by_id(candidate_id)
         if not candidate_profile:
             return jsonify({'error': f'Candidate {candidate_id} not found in database'}), 404
+
+        # Fetch raw_profile JSON from candidate_profiles table
+        supabase = matcher.supabase
+        raw_profile_data = supabase.table('candidate_profiles').select('raw_profile').eq(
+            'id', candidate_profile['profile_id']
+        ).execute()
+
+        raw_profile_json = None
+        if raw_profile_data.data and raw_profile_data.data[0].get('raw_profile'):
+            raw_profile_json = raw_profile_data.data[0]['raw_profile']
 
         # Build candidate_info object
         candidate_info = {
@@ -874,6 +887,7 @@ def generate_email():
                 'company': candidate_info['current_company'],
                 'location': candidate_info['location']
             },
+            'candidate_profile': raw_profile_json,  # Full raw candidate JSON for external use
             'professional_summary': professional_summary,
             'job_preferences': job_preferences,
             'interests': interests,
