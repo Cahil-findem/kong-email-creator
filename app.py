@@ -341,23 +341,38 @@ Nice-to-Have: {', '.join(nice_to_have[:3]) if nice_to_have else 'Not specified'}
 Semantic Similarity Score: {semantic_similarity:.1%}
 
 EVALUATION CRITERIA:
-1. Role Type Match: Does the candidate's profession align with the job type? (Engineer vs Designer vs PM, etc.)
-2. Seniority Match: Does the candidate's level match the job level?
-3. Domain Expertise: Does the candidate have relevant domain knowledge?
-4. Required Skills: Does the candidate meet the must-have requirements?
-5. Career Trajectory: Would this be a logical next step for them?
+1. **Role Type Match** (CRITICAL): Does the candidate's core profession align with the job type?
+   - Engineer should match Engineer roles (regardless of specific tech stack)
+   - Designer should match Designer roles
+   - PM should match PM roles
+   - REJECT if core profession mismatches (e.g., Designer applying to Engineer role)
+
+2. **Seniority Match**: Does the candidate's level appropriately match the job level?
+   - Consider if this is a step up, lateral, or step down
+   - Senior candidates can do Senior or Staff roles
+
+3. **Transferable Skills**: For senior technical roles, evaluate based on:
+   - Strong fundamentals and problem-solving ability matter more than specific tech
+   - Domain expertise is valuable but not always required
+   - Senior engineers can learn new stacks/tools quickly
+
+4. **Core Requirements**: Do they meet the fundamental must-have requirements?
+   - Focus on core competencies, not specific technologies
+   - "Strong coding skills" matters more than "experience with Tool X"
+
+5. **Career Logic**: Would this role make sense for their career trajectory?
 
 Respond ONLY with valid JSON in this exact format:
 {{
   "is_match": true/false,
   "confidence": "high/medium/low",
   "match_score": 0-100,
-  "reasoning": "1-2 sentence explanation of why this is or isn't a match",
+  "reasoning": "1-2 sentence explanation focusing on the key factor",
   "key_alignments": ["alignment1", "alignment2"],
   "concerns": ["concern1", "concern2"]
 }}
 
-Be strict: Only return is_match: true for candidates who would genuinely be qualified and interested in this specific role."""
+IMPORTANT: Be realistic about senior roles - strong engineering fundamentals and seniority match matters more than specific tech experience. ONLY reject if there's a core profession mismatch (e.g., Designer for Engineer role) or major seniority gap."""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
