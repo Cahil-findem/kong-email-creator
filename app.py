@@ -498,11 +498,11 @@ TONE & STYLE:
 - No emojis, but you can be warm and friendly in your language
 
 STRUCTURE:
-- Total length: Under 180 words (excluding job/blog sections)
+- Total length: Under 180 words (excluding blog sections)
 - GREETING LINE: ALWAYS start with a greeting on its own line using their first name: "Hi [Name]," or "Hey [Name],"
 - FIRST PARAGRAPH: A warm, personal observation about something specific in their background (1-2 sentences max)
 - SECOND PARAGRAPH: Ask a genuine question that shows you care about their path forward (1-2 sentences)
-- **IF MATCHING JOBS EXIST**: Present job openings naturally before blogs (see JOB SECTION FORMAT below)
+- **IF MATCHING JOBS EXIST**: Weave job opening mentions naturally into the conversation (1-2 sentences max, with linked job titles)
 - THIRD PARAGRAPH: Share the blogs as "came across these and thought of you"
 - Close with one warm, inviting sentence
 
@@ -534,23 +534,15 @@ QUESTION EXAMPLES (sound genuinely curious):
 - "What's pulling you forward right now — [aspect A] or [aspect B]?"
 - "Have you been thinking about [next level/direction], or are you still loving [current focus]?"
 
-**JOB SECTION** (ONLY include if matching jobs are provided in context):
-- If the context includes "Matching Job Openings" with actual job data, present them naturally and warmly
-- Never mention jobs if no matches exist
-- Transition naturally: "By the way, I noticed we have a couple of openings that might align with where you're headed:"
-- Keep it conversational, not salesy
-- After jobs, transition to blogs with: "I also came across a few pieces recently..."
-
-JOB SECTION FORMAT (use this HTML structure for each job):
-<div style="padding: 20px; background: #f9fafb; border-left: 4px solid #2563eb; margin-bottom: 20px; border-radius: 4px;">
-  <h3 style="margin: 0 0 8px 0; font-size: 18px; color: #1f2937;">
-    <a href="[APPLICATION_LINK]" style="color: #2563eb; text-decoration: none;">[POSITION_TITLE]</a>
-  </h3>
-  <p style="margin: 4px 0; font-size: 14px; color: #6b7280;">[LOCATION_TYPE] • [COMPENSATION]</p>
-  <p style="margin: 12px 0 0 0; font-size: 14px; color: #374151; line-height: 1.6;">[One personal sentence about why this role could be a good fit for them based on their background]</p>
-</div>
-
-[Repeat for up to 2 jobs max]
+**MENTIONING JOB OPENINGS** (ONLY if matching jobs are provided in context):
+- If the context includes "Matching Job Openings" with actual job data, weave them naturally into your conversational text
+- Never mention jobs if no matches exist (context says "No matching jobs found")
+- Don't create a separate section or card - integrate job mentions into the natural flow of the email
+- Make the job title a clickable link using: <a href="[APPLICATION_LINK]" style="color: #2563eb; text-decoration: none;">[POSITION_TITLE]</a>
+- Keep it subtle and conversational, like: "By the way, we have a <a href="..." style="color: #2563eb; text-decoration: none;">Senior Software Engineer - Insomnia Team</a> opening that might be interesting given your background in [relevant experience]."
+- Or: "I also wanted to mention we're hiring for a <a href="..." style="color: #2563eb; text-decoration: none;">[Job Title]</a> role — thought it might align with where you're headed."
+- Maximum 1-2 sentences mentioning jobs, woven naturally into a paragraph
+- After mentioning jobs (if any), transition naturally to blogs
 
 BLOG TRANSITION (make it natural):
 - If jobs were mentioned: "I also came across a few pieces recently that reminded me of you:"
@@ -582,10 +574,11 @@ Sign-off: "Best,"
 CRITICAL RULES:
 - NO subject line in the email body (will be generated separately)
 - NO signature name after "Best," - just "Best,"
-- Under 180 words before job/blog sections
+- Under 180 words before blog sections
 - Sound like a real person reaching out, not a templated message
-- Use HTML formatting for job and blog sections EXACTLY as shown
-- ONLY include job section if matching jobs exist in the context
+- Use HTML formatting for blog sections EXACTLY as shown
+- For jobs: Weave naturally into text with job titles as hyperlinks (NO cards or separate sections)
+- ONLY mention jobs if matching jobs exist in the context
 - NEVER mention jobs if context says "No matching jobs found"
 - Make both job and blog justifications PERSONAL to this specific person
 - Each email should feel like it was written just for them"""
