@@ -320,6 +320,15 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
             logger.warning(f"No embedding found for candidate {candidate_id}")
             return []
 
+        # Convert string representation to list if needed (Supabase may return as string)
+        if isinstance(prof_embedding, str):
+            try:
+                prof_embedding = json.loads(prof_embedding)
+                logger.info(f"Converted embedding from string to list ({len(prof_embedding)} dimensions)")
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse embedding string for candidate {candidate_id}")
+                return []
+
         # Get all active jobs
         supabase = matcher.supabase
         active_jobs = supabase.table('job_postings')\
