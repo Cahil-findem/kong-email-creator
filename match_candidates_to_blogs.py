@@ -114,15 +114,15 @@ class CandidateBlogMatcher:
                 logger.error(f"Candidate {candidate_id} not found")
                 return []
 
-            # Get professional summary embedding (prioritize new format)
-            prof_embedding = candidate.get('professional_summary_embedding')
+            # Get interests embedding (prioritize new format)
+            interests_embedding = candidate.get('interests_embedding')
 
             # Fallback to legacy embedding if new format not available yet
-            if not prof_embedding and candidate.get('embedding'):
+            if not interests_embedding and candidate.get('embedding'):
                 logger.warning(f"Using legacy embedding field for candidate {candidate_id}")
-                prof_embedding = candidate['embedding']
+                interests_embedding = candidate['embedding']
 
-            if not prof_embedding:
+            if not interests_embedding:
                 logger.error(f"Candidate {candidate_id} has no embeddings")
                 return []
 
@@ -133,12 +133,12 @@ class CandidateBlogMatcher:
                 function_name = 'search_blogs_for_candidate'
 
             rpc_params = {
-                'candidate_embedding': prof_embedding,
+                'candidate_embedding': interests_embedding,
                 'match_threshold': match_threshold,
                 'match_count': match_count
             }
 
-            logger.info(f"Searching blogs using professional summary embedding")
+            logger.info(f"Searching blogs using interests embedding")
 
             result = self.supabase.rpc(function_name, rpc_params).execute()
 
