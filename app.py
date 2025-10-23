@@ -780,12 +780,11 @@ BLOG TRANSITION (make it natural):
 
 BLOG SECTION FORMAT:
 <div style="margin-bottom: 20px;">
-  <p style="margin: 0 0 12px 0; font-size: 15px; color: #1f2937; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
   <div style="display: flex; gap: 12px; align-items: center;">
     <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 250px; height: 167px; object-fit: cover; border-radius: 12px; flex-shrink: 0;">
     <div style="flex: 1; min-width: 0;">
       <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 500; color: #101828; text-decoration: none; display: block; line-height: 1.4; margin: 0;">[BLOG_TITLE]</a>
-      <p style="margin: 0; font-size: 14px; color: #6b7280; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">[Brief excerpt from the blog - 2-3 sentences that give context about what the article covers]</p>
+      <p style="margin: 0; font-size: 14px; color: #6b7280; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
     </div>
   </div>
 </div>
