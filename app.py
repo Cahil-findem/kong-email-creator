@@ -778,15 +778,16 @@ BLOG TRANSITION (make it natural):
 - "Thought you might find these interesting given your work in [domain]:"
 - "Been reading a few things that reminded me of you:"
 
-BLOG SECTION FORMAT (card with light border, no shadow):
-<div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; background: #ffffff;">
+BLOG SECTION FORMAT (no border, clean layout):
+<div style="margin-bottom: 20px;">
   <p style="margin: 0 0 12px 0; font-size: 15px; color: #1f2937; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
   <div style="display: flex; gap: 16px; align-items: flex-start;">
     <a href="[BLOG_URL]" style="flex-shrink: 0; display: block; line-height: 0;">
       <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 160px; height: 100px; object-fit: cover; border-radius: 6px; display: block;">
     </a>
     <div style="flex: 1; min-width: 0;">
-      <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none; display: block; line-height: 1.4;">[BLOG_TITLE]</a>
+      <a href="[BLOG_URL]" style="font-size: 14px; font-weight: 600; color: #1f2937; text-decoration: none; display: block; line-height: 1.4; margin-bottom: 6px;">[BLOG_TITLE]</a>
+      <p style="margin: 0; font-size: 13px; color: #6b7280; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">[Brief excerpt from the blog - 2-3 sentences that give context about what the article covers]</p>
     </div>
   </div>
 </div>
