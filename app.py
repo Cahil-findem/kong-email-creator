@@ -578,10 +578,11 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
             'excerpt': blog.get('best_matching_chunk', '')[:200]
         })
 
-    # Format job matches if available
+    # Job matches have already been evaluated by LLM in match_candidate_to_open_jobs()
+    # No need for additional evaluation - use the matches that were already confirmed
     job_list = []
-    if job_matches:
-        for job in job_matches:
+    if job_matches and len(job_matches) > 0:
+        for job in job_matches[:3]:  # Max 3 jobs for email
             job_list.append({
                 'position': job['position'],
                 'company': job.get('company', ''),
@@ -590,8 +591,14 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
                 'compensation': f"{job.get('compensation_currency', '')} {job.get('compensation_min', 0):,.0f} - {job.get('compensation_max', 0):,.0f}",
                 'about_role': job.get('about_role', '')[:250],
                 'application_link': job.get('application_link', ''),
-                'match_score': f"{job.get('similarity', 0) * 100:.0f}%"
+                'match_score': f"{job.get('similarity', 0) * 100:.0f}%",
+                'similarity': job.get('similarity', 0),
+                'llm_reasoning': job.get('llm_evaluation', {}).get('reasoning', '') if isinstance(job.get('llm_evaluation'), dict) else ''
             })
+
+    # Decide which email approach to use
+    # If jobs were confirmed by the matching LLM, use job-focused approach
+    use_job_focused_approach = len(job_list) > 0
 
     # Build context for email generation (using clearer variable names)
     email_context = f"""Candidate Name: {name}
@@ -617,7 +624,116 @@ Recommended Blog Posts:
 """
 
     # Use LLM to generate the email
-    system_prompt = """You are writing a warm, personal email to someone in your professional network — like reaching out to a talented friend or former colleague you genuinely respect.
+    # Choose prompt based on email approach
+    if use_job_focused_approach:
+        # JOB-FOCUSED APPROACH: Lead with opportunity
+        system_prompt = """You are a recruiter reaching out about a specific job opportunity that matches the candidate's background. Your tone is direct, professional, and opportunity-focused while remaining personable.
+
+TONE & STYLE:
+- Direct and clear about the opportunity
+- Professional but warm — you're excited about this match
+- Confident that this role aligns with their career trajectory
+- Personal touches still matter — show you understand their background
+- No emojis
+
+STRUCTURE:
+- GREETING LINE: Start with their first name: "Hi [Name],"
+- OPENING (2-3 sentences): Directly introduce why you're reaching out — mention the specific role and why their background caught your attention for THIS position
+- JOB CARD SECTION: Present the job opportunity prominently
+- BRIEF CONTEXT (2-3 sentences): Explain why this role fits their background
+- CLEO MENTION (1 sentence): "If you have any questions about the role, feel free to reach out to Cleo."
+- BLOG INTRO (1 sentence): Brief mention that there are some blogs they might find interesting
+- BLOG SECTION: Include 2-3 blog posts with minimal description
+- CLOSING: Clear call-to-action to discuss the opportunity
+
+OPENING EXAMPLES:
+
+Example 1:
+"Hi [Name],
+
+I'm reaching out because we have a [Position Title] role at [Company] that seems like a strong match for your background. Given your experience in [specific domain/skill], I thought this might be worth exploring."
+
+Example 2:
+"Hi [Name],
+
+Your experience as [current role] at [company], particularly your work in [specific area], caught my attention for our [Position Title] opening. I think there's a compelling fit here."
+
+Example 3:
+"Hi [Name],
+
+I wanted to reach out about a [Position Title] opportunity at [Company]. With your background spanning [domain A] and [domain B], you're exactly the kind of professional we're looking for."
+
+JOB CARD FORMAT (use this HTML structure for EACH job - if multiple jobs, include multiple cards):
+<div style="border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin: 24px 0; background: #f9fafb;">
+  <h2 style="margin: 0 0 16px 0; font-size: 20px; color: #1f2937; font-weight: 600;">
+    <a href="[APPLICATION_LINK]" style="color: #2563eb; text-decoration: none;">[POSITION]</a>
+  </h2>
+  <div style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">
+    <strong style="color: #374151;">[COMPANY]</strong> • [LOCATION_TYPE] • [LOCATION]
+  </div>
+  <div style="color: #059669; font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+    [COMPENSATION]
+  </div>
+  <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 12px 0;">
+    [2-3 key highlights about the role from about_role - make it specific and compelling]
+  </p>
+  <div style="margin-top: 16px;">
+    <a href="[APPLICATION_LINK]" style="display: inline-block; background: #2563eb; color: white; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">
+      View Full Details
+    </a>
+  </div>
+</div>
+
+BRIEF CONTEXT (after job card - keep it short):
+- 2-3 sentences max explaining why this role fits
+- Reference their specific experience or skills
+
+Example:
+"Your background in [specific domain] and experience at [company] align well with what we're looking for. This role would let you [key opportunity]."
+
+CLEO MENTION (exactly as shown):
+"If you have any questions about the role, feel free to reach out to Cleo."
+
+BLOG SECTION (keep it minimal):
+- Brief intro: "I also thought you might find these articles interesting:" or "Here are a few pieces about Kong that might interest you:"
+- Include 2-3 blog posts
+- NO detailed justifications - just show the blog with title and image
+
+BLOG FORMAT (card with light border, no shadow):
+<div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; background: #ffffff;">
+  <div style="display: flex; gap: 16px; align-items: flex-start;">
+    <a href="[BLOG_URL]" style="flex-shrink: 0; display: block; line-height: 0;">
+      <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 160px; height: 100px; object-fit: cover; border-radius: 6px; display: block;">
+    </a>
+    <div style="flex: 1; min-width: 0;">
+      <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none; display: block; line-height: 1.4;">[BLOG_TITLE]</a>
+    </div>
+  </div>
+</div>
+
+CLOSING EXAMPLES (clear CTA):
+- "Would you be open to a 15-minute call this week to discuss?"
+- "If this sounds interesting, I'd love to set up a quick call to share more details."
+- "Let me know if you'd like to chat — happy to walk through the role and answer any questions."
+- "Are you available for a brief conversation in the next few days?"
+
+Sign-off: "Best,"
+
+CRITICAL RULES:
+- NO subject line in the email body (will be generated separately)
+- NO signature name after "Best," - just "Best,"
+- Lead with the job opportunity — that's the primary purpose
+- Use job card HTML format EXACTLY as shown for EACH job in the context
+- If multiple jobs are provided, include a card for each
+- Keep content after job card CONCISE
+- ALWAYS include: "If you have any questions about the role, feel free to reach out to Cleo."
+- Blogs: minimal format, NO detailed justifications, just title and image
+- Clear call-to-action at the end
+- Keep overall email focused and not too long"""
+
+    else:
+        # RELATIONSHIP-NURTURE APPROACH: Build connection, share valuable content
+        system_prompt = """You are writing a warm, personal email to someone in your professional network — like reaching out to a talented friend or former colleague you genuinely respect.
 
 Your goal is to make this feel like a real, thoughtful message from someone who's been thinking about them and their career.
 
@@ -633,7 +749,6 @@ STRUCTURE:
 - GREETING LINE: ALWAYS start with a greeting on its own line using their first name: "Hi [Name]," or "Hey [Name],"
 - FIRST PARAGRAPH: A warm, personal observation about something specific in their background (1-2 sentences max)
 - SECOND PARAGRAPH: Ask a genuine question that shows you care about their path forward (1-2 sentences)
-- **IF MATCHING JOBS EXIST**: Weave job opening mentions naturally into the conversation (1-2 sentences max, with linked job titles)
 - THIRD PARAGRAPH: Share the blogs as "came across these and thought of you"
 - Close with one warm, inviting sentence
 
@@ -665,36 +780,25 @@ QUESTION EXAMPLES (sound genuinely curious):
 - "What's pulling you forward right now — [aspect A] or [aspect B]?"
 - "Have you been thinking about [next level/direction], or are you still loving [current focus]?"
 
-**MENTIONING JOB OPENINGS** (ONLY if matching jobs are provided in context):
-- If the context includes "Matching Job Openings" with actual job data, weave them naturally into your conversational text
-- Never mention jobs if no matches exist (context says "No matching jobs found")
-- Don't create a separate section or card - integrate job mentions into the natural flow of the email
-- Make the job title a clickable link using: <a href="[APPLICATION_LINK]" style="color: #2563eb; text-decoration: none;">[POSITION_TITLE]</a>
-- Keep it subtle and conversational, like: "By the way, we have a <a href="..." style="color: #2563eb; text-decoration: none;">Senior Software Engineer - Insomnia Team</a> opening that might be interesting given your background in [relevant experience]."
-- Or: "I also wanted to mention we're hiring for a <a href="..." style="color: #2563eb; text-decoration: none;">[Job Title]</a> role — thought it might align with where you're headed."
-- Maximum 1-2 sentences mentioning jobs, woven naturally into a paragraph
-- After mentioning jobs (if any), transition naturally to blogs
-
 BLOG TRANSITION (make it natural):
-- If jobs were mentioned: "I also came across a few pieces recently that reminded me of you:"
-- If no jobs: "I came across a few pieces recently and thought they might resonate with you:"
+- "I came across a few pieces recently and thought they might resonate with you:"
 - "Thought you might find these interesting given your work in [domain]:"
 - "Been reading a few things that reminded me of you:"
 
-BLOG SECTION FORMAT (keep this HTML structure exactly - justification first, then image and title):
-<div style="margin-bottom: 24px;">
-  <p style="margin: 0; padding: 0 0 12px 0; font-size: 16px; color: #1f2937; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
-  <div style="display: flex; gap: 16px; align-items: flex-start; margin: 0; padding: 0;">
+BLOG SECTION FORMAT (card with light border, no shadow):
+<div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; background: #ffffff;">
+  <p style="margin: 0 0 12px 0; font-size: 15px; color: #1f2937; line-height: 1.6;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
+  <div style="display: flex; gap: 16px; align-items: flex-start;">
     <a href="[BLOG_URL]" style="flex-shrink: 0; display: block; line-height: 0;">
-      <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 200px; height: 120px; object-fit: cover; border-radius: 8px; display: block;">
+      <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 160px; height: 100px; object-fit: cover; border-radius: 6px; display: block;">
     </a>
     <div style="flex: 1; min-width: 0;">
-      <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none; display: block;">[BLOG_TITLE]</a>
+      <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none; display: block; line-height: 1.4;">[BLOG_TITLE]</a>
     </div>
   </div>
 </div>
 
-[Repeat for each blog - use featured_image from blog data, or use placeholder: https://via.placeholder.com/200x120/2563eb/ffffff?text=Blog]
+[Repeat for each blog - use featured_image from blog data, or use placeholder: https://via.placeholder.com/160x100/2563eb/ffffff?text=Blog]
 
 CLOSING EXAMPLES (warm and genuine):
 - "Would love to catch up sometime if you're open to it — always enjoy talking shop."
@@ -710,11 +814,9 @@ CRITICAL RULES:
 - Under 180 words before blog sections
 - Sound like a real person reaching out, not a templated message
 - Use HTML formatting for blog sections EXACTLY as shown
-- For jobs: Weave naturally into text with job titles as hyperlinks (NO cards or separate sections)
-- ONLY mention jobs if matching jobs exist in the context
-- NEVER mention jobs if context says "No matching jobs found"
-- Make both job and blog justifications PERSONAL to this specific person
-- Each email should feel like it was written just for them"""
+- Make blog justifications PERSONAL to this specific person
+- Each email should feel like it was written just for them
+- Do NOT mention jobs in this approach"""
 
     try:
         response = openai_client.chat.completions.create(
@@ -730,7 +832,24 @@ CRITICAL RULES:
         email_body = response.choices[0].message.content.strip()
 
         # Generate subject line separately for better control
-        subject_prompt = f"""Generate a warm, personal subject line for {first_name}, a {current_title} at {current_company}.
+        if use_job_focused_approach:
+            # Job-focused subject line
+            job_title = job_list[0]['position'] if job_list else 'opportunity'
+            subject_prompt = f"""Generate a direct, professional subject line for a job opportunity email to {first_name}, a {current_title} at {current_company}.
+
+The email is about a {job_title} role that matches their background.
+
+Style examples:
+- "{job_title} opportunity at [Company]"
+- "Thought of you for our {job_title} role"
+- "{first_name}: {job_title} role that matches your background"
+- "Great fit for you: {job_title} at [Company]"
+- "{job_title} opening — thought you'd be interested"
+
+Keep it under 60 characters, no quotation marks, use title case. Be clear it's about a specific role."""
+        else:
+            # Relationship-nurture subject line
+            subject_prompt = f"""Generate a warm, personal subject line for {first_name}, a {current_title} at {current_company}.
 
 It should feel like you're reaching out to someone you know and respect — personal, not salesy.
 
@@ -754,14 +873,16 @@ Keep it under 60 characters, no quotation marks, use title case."""
 
         subject = subject_response.choices[0].message.content.strip().replace('"', '').replace("'", "")
 
-        logger.info(f"Generated email for {name}")
+        logger.info(f"Generated {'job-focused' if use_job_focused_approach else 'relationship-nurture'} email for {name}")
 
         return {
             'subject': subject,
             'body': email_body,
             'candidate_name': name,
             'candidate_title': current_title,
-            'blog_count': len(blog_recommendations)
+            'blog_count': len(blog_recommendations),
+            'email_approach': 'job-focused' if use_job_focused_approach else 'relationship-nurture',
+            'job_count': len(job_list)
         }
 
     except Exception as e:
@@ -784,7 +905,9 @@ I came across your background as {current_title} at {current_company} and though
             'body': email_body,
             'candidate_name': name,
             'candidate_title': current_title,
-            'blog_count': len(blog_recommendations)
+            'blog_count': len(blog_recommendations),
+            'email_approach': 'relationship-nurture',
+            'job_count': 0
         }
 
 
