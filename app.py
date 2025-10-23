@@ -106,14 +106,26 @@ Given a candidate profile, generate THREE separate text summaries as valid JSON:
    - Location: [their preferred work location - Remote, City/State, or Flexible]
    - Seniority: [IC, Senior IC, Manager, Senior Manager, Director, VP, or Executive]
 
-3. **interests**: A bulleted list of their professional interests, formatted as:
-   • [Interest/Technology/Industry 1]
-   • [Interest/Technology/Industry 2]
-   • [Interest/Technology/Industry 3]
-   • [Interest/Technology/Industry 4]
-   • [Interest/Technology/Industry 5]
+3. **interests**: A bulleted list of professional interests directly tied to their job role and day-to-day work, formatted as:
+   • [Interest/Skill/Domain 1]
+   • [Interest/Skill/Domain 2]
+   • [Interest/Skill/Domain 3]
+   • [Interest/Skill/Domain 4]
+   • [Interest/Skill/Domain 5]
 
-   Focus on: technical skills, industry trends, domains, technologies, tools, and professional topics they'd engage with.
+   Guidelines:
+   - Infer interests from what they actually do in their role, not from their broader industry.
+   - Prioritize functional depth — what a strong performer in their position focuses on mastering or improving.
+   - Include specific processes, tools, or performance areas that define excellence in that job.
+   - Keep interests practitioner-level, not aspirational or trend-focused.
+   - Avoid unrelated technologies or high-level topics unless clearly used in their work.
+
+   Example for an Account Executive:
+   • Pipeline generation and deal qualification
+   • Forecast accuracy and CRM optimization
+   • Multi-threaded enterprise selling
+   • Negotiation and closing strategies
+   • Cross-functional alignment with marketing and CS
 
 Output ONLY valid JSON in this exact format:
 {
