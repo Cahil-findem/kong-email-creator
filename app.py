@@ -664,20 +664,20 @@ Example 3:
 I wanted to reach out about a [Position Title] opportunity at [Company]. With your background spanning [domain A] and [domain B], you're exactly the kind of professional we're looking for."
 
 JOB CARD FORMAT (use this HTML structure for EACH job - if multiple jobs, include multiple cards):
-<div style="border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin: 24px 0; background: #f9fafb;">
-  <h2 style="margin: 0 0 16px 0; font-size: 20px; color: #1f2937; font-weight: 600;">
+<div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0; background: #ffffff;">
+  <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #1f2937; font-weight: 600;">
     <a href="[APPLICATION_LINK]" style="color: #2563eb; text-decoration: none;">[POSITION]</a>
   </h2>
-  <div style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">
+  <div style="color: #6b7280; font-size: 14px; margin-bottom: 8px;">
     <strong style="color: #374151;">[COMPANY]</strong> • [LOCATION_TYPE] • [LOCATION]
   </div>
-  <div style="color: #059669; font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+  <div style="color: #059669; font-size: 14px; font-weight: 600; margin-bottom: 10px;">
     [COMPENSATION]
   </div>
-  <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 12px 0;">
+  <p style="color: #374151; font-size: 15px; line-height: 1.5; margin: 0 0 10px 0;">
     [2-3 key highlights about the role from about_role - make it specific and compelling]
   </p>
-  <div style="margin-top: 16px;">
+  <div style="margin-top: 12px;">
     <a href="[APPLICATION_LINK]" style="display: inline-block; background: #2563eb; color: white; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">
       View Full Details
     </a>
