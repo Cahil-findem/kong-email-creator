@@ -654,8 +654,6 @@ STRUCTURE:
 - JOB CARD SECTION: Present the job opportunity prominently
 - BRIEF CONTEXT (2-3 sentences): Explain why this role fits their background
 - CLEO MENTION (1 sentence): "If you have any questions about the role, feel free to reach out to Cleo."
-- BLOG INTRO (1 sentence): Brief mention that there are some blogs they might find interesting
-- BLOG SECTION: Include 2-3 blog posts with minimal description
 - CLOSING: Clear call-to-action to discuss the opportunity
 
 OPENING EXAMPLES:
@@ -706,23 +704,6 @@ Example:
 CLEO MENTION (exactly as shown):
 "If you have any questions about the role, feel free to reach out to Cleo."
 
-BLOG SECTION (keep it minimal):
-- Brief intro: "I also thought you might find these articles interesting:" or "Here are a few pieces about Kong that might interest you:"
-- Include 2-3 blog posts
-- NO detailed justifications - just show the blog with title and image
-
-BLOG FORMAT (card with light border, no shadow):
-<div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; background: #ffffff;">
-  <div style="display: flex; gap: 16px; align-items: flex-start;">
-    <a href="[BLOG_URL]" style="flex-shrink: 0; display: block; line-height: 0;">
-      <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 160px; height: 100px; object-fit: cover; border-radius: 6px; display: block;">
-    </a>
-    <div style="flex: 1; min-width: 0;">
-      <a href="[BLOG_URL]" style="font-size: 16px; font-weight: 600; color: #2563eb; text-decoration: none; display: block; line-height: 1.4;">[BLOG_TITLE]</a>
-    </div>
-  </div>
-</div>
-
 CLOSING EXAMPLES (clear CTA):
 - "Would you be open to a 15-minute call this week to discuss?"
 - "If this sounds interesting, I'd love to set up a quick call to share more details."
@@ -739,9 +720,9 @@ CRITICAL RULES:
 - If multiple jobs are provided, include a card for each
 - Keep content after job card CONCISE
 - ALWAYS include: "If you have any questions about the role, feel free to reach out to Cleo."
-- Blogs: minimal format, NO detailed justifications, just title and image
 - Clear call-to-action at the end
-- Keep overall email focused and not too long"""
+- Keep overall email focused and not too long
+- DO NOT include any blog posts or articles — this is purely about the job opportunity"""
 
     else:
         # RELATIONSHIP-NURTURE APPROACH: Build connection, share valuable content
