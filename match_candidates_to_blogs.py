@@ -186,10 +186,11 @@ class CandidateBlogMatcher:
 
             blogs_text = '\n\n'.join(blog_summaries)
 
-            # Create candidate context
+            # Create candidate context with role emphasis
             candidate_context = f"""Candidate Profile:
 - Name: {candidate.get('full_name', 'Unknown')}
 - Current Title: {candidate.get('current_title', 'Unknown')}
+- Professional Interests: {candidate.get('interests', 'Not specified')}
 - About: {candidate.get('about_me', 'No information available')[:300]}"""
 
             selection_prompt = f"""You are helping select the most relevant blog posts for a recruiting nurture email campaign.
@@ -199,12 +200,20 @@ class CandidateBlogMatcher:
 Available Blog Posts (Top {len(blogs)} by embedding similarity):
 {blogs_text}
 
-Select the {num_to_select} MOST RELEVANT blog posts for this candidate. Consider:
-1. Relevance to their current role and experience
-2. Recency (prefer newer content when equally relevant)
-3. Topic diversity (don't pick {num_to_select} similar posts)
-4. Engaging titles and compelling content
-5. Professional development value for their career stage
+Select the {num_to_select} MOST RELEVANT blog posts for this candidate.
+
+CRITICAL: Prioritize blogs that are DIRECTLY relevant to their current role and day-to-day work. A blog must be something they would find immediately applicable to what they do in their job TODAY.
+
+Selection Criteria (in priority order):
+1. **ROLE RELEVANCE** (HIGHEST PRIORITY - 70% weight): Does this blog directly relate to their current job function and day-to-day responsibilities? Would someone in their role find this immediately useful?
+2. **Professional Interests** (20% weight): Does it align with their stated professional interests and focus areas?
+3. **Topic Diversity** (10% weight): Avoid selecting {num_to_select} blogs on the exact same topic
+4. **Recency**: When equally relevant, prefer newer content
+
+REJECT blogs that are:
+- Too broad or generic for their specific role
+- About technologies/domains they don't work with
+- Aspirational content not tied to their current function
 
 Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: [1, 5, 8]"""
 
