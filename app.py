@@ -255,57 +255,31 @@ def vectorize_candidate_summaries(candidate_data, summaries):
 
 def match_blogs_for_candidate_internal(candidate_id):
     """
-    Internal: Find matching blogs for a candidate
-    Returns: list of diverse blog matches (top 3)
+    Internal: Find matching blogs for a candidate using hybrid approach
+    Returns: list of LLM-selected blog matches (top 3)
     """
     try:
-        logger.info(f"Finding blog matches for {candidate_id}...")
+        logger.info(f"Finding blog matches for {candidate_id} using hybrid LLM approach...")
 
-        # Get initial matches
-        blog_matches = matcher.find_blogs_for_candidate(
+        # Use hybrid approach: embeddings get top 30, LLM selects best 3
+        selected_blogs = matcher.find_blogs_for_candidate_hybrid(
             candidate_id,
             match_threshold=0.25,
-            match_count=30,
-            deduplicate=True
+            top_n_embeddings=30,  # LLM reviews 30 candidates
+            final_n_llm=3          # LLM selects best 3
         )
 
-        if not blog_matches:
+        if not selected_blogs:
+            logger.info(f"No blog matches found for {candidate_id}")
             return []
 
-        # Filter for diversity
-        top_blogs = filter_diverse_blogs(blog_matches)
-        logger.info(f"Found {len(blog_matches)} matches, selected {len(top_blogs)} diverse posts")
-
-        return top_blogs
+        logger.info(f"LLM selected {len(selected_blogs)} blogs from 30 candidates")
+        return selected_blogs
     except Exception as e:
         logger.error(f"Error matching blogs: {str(e)}")
         return []
 
 
-def filter_diverse_blogs(blog_matches, count=3):
-    """
-    Internal: Filter blogs to get diverse, high-quality matches
-    Prioritizes domain-specific content over generic posts
-    """
-    top_blogs = []
-    generic_keywords = ['career', 'team', 'culture', 'life at', 'meet the engineers']
-
-    # First pass: get specific content
-    for blog in blog_matches:
-        if len(top_blogs) >= count:
-            break
-        title_lower = blog['blog_title'].lower()
-        if not any(keyword in title_lower for keyword in generic_keywords):
-            top_blogs.append(blog)
-
-    # Second pass: fill remaining slots with best matches
-    for blog in blog_matches:
-        if len(top_blogs) >= count:
-            break
-        if blog not in top_blogs:
-            top_blogs.append(blog)
-
-    return top_blogs
 
 
 def evaluate_job_match_with_llm(candidate_profile, job, semantic_similarity):
