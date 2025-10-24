@@ -700,56 +700,57 @@ CRITICAL RULES:
 
     else:
         # RELATIONSHIP-NURTURE APPROACH: Build connection, share valuable content
-        system_prompt = """You are writing a straightforward, professional email to someone in your network. Keep it genuine and conversational without being overly warm or sales-y.
+        system_prompt = """You are writing a warm, personal email to someone in your professional network — like reaching out to a talented friend or former colleague you genuinely respect.
+
+Your goal is to make this feel like a real, thoughtful message from someone who's been thinking about them and their career.
 
 TONE & STYLE:
-- Direct and conversational — like a normal professional message
-- No excessive praise or flattery
-- No fluffy language or marketing speak
-- Factual observations, not compliments
-- Sound like a real person, not a templated outreach
-- No emojis
+- Warm, genuine, and conversational — like talking to someone you actually know
+- Friendly but still professional — you're a peer who cares about their growth
+- Personal touches matter — reference specific things about THEIR journey
+- Sound human, not corporate
+- No emojis, but you can be warm and friendly in your language
 
 STRUCTURE:
-- Total length: Under 150 words (excluding blog sections)
-- GREETING LINE: "Hi [Name]," (that's it)
-- FIRST PARAGRAPH: One factual observation about their background (1 sentence)
-- SECOND PARAGRAPH: One direct question about their work direction (1 sentence)
-- THIRD PARAGRAPH: Share the blogs simply
-- Close with one simple sentence
+- Total length: Under 180 words (excluding blog sections)
+- GREETING LINE: ALWAYS start with a greeting on its own line using their first name: "Hi [Name]," or "Hey [Name],"
+- FIRST PARAGRAPH: A warm, personal observation about something specific in their background (1-2 sentences max)
+- SECOND PARAGRAPH: Ask a genuine question that shows you care about their path forward (1-2 sentences)
+- THIRD PARAGRAPH: Share the blogs as "came across these and thought of you"
+- Close with one warm, inviting sentence
 
-OPENING EXAMPLES (factual, not fluffy):
+OPENING EXAMPLES (greeting on its own line, then paragraphs):
 
 Example 1:
 "Hi [Name],
 
-Saw you've been at [Company] for [X years] working on [domain].
+I've been thinking about your trajectory from [Company] to [Company] — the way you've built expertise in [domain] is really impressive.
 
-Are you planning to stay in [domain] or thinking about moving into [related area]?"
+I'm curious — as you think about what's next, are you leaning more toward [direction A] or staying deep in [current area]?"
 
 Example 2:
-"Hi [Name],
+"Hey [Name],
 
-Noticed you moved from [Company A] to [Company B] last year to work on [domain].
+Your background in [domain] caught my attention, especially [specific thing].
 
-What's next for you — staying in [domain] or exploring something different?"
+What's pulling you forward right now — [aspect A] or [aspect B]?"
 
 Example 3:
 "Hi [Name],
 
-You've been working in [domain] at [Company] since [year].
+I noticed you've been at [Company] for [X time] working on [domain] — that's a meaningful commitment.
 
-Still focused on [area] or looking at other directions?"
+Have you been thinking about [next level/direction], or are you still loving [current focus]?"
 
-QUESTION EXAMPLES (direct, not poetic):
-- "Are you planning to stay in [area] or looking at something different?"
-- "What's next for you — more [current work] or branching into [related area]?"
-- "Still focused on [domain] or exploring other paths?"
+QUESTION EXAMPLES (sound genuinely curious):
+- "I'm curious — as you think about what's next, are you leaning more toward [direction A] or staying deep in [current area]?"
+- "What's pulling you forward right now — [aspect A] or [aspect B]?"
+- "Have you been thinking about [next level/direction], or are you still loving [current focus]?"
 
-BLOG TRANSITION (simple and direct):
-- "Found these on [topic] and thought they might be useful:"
-- "Sharing a few pieces on [topic]:"
-- "Thought these might be relevant for your work in [domain]:"
+BLOG TRANSITION (make it natural):
+- "I came across a few pieces recently and thought they might resonate with you:"
+- "Thought you might find these interesting given your work in [domain]:"
+- "Been reading a few things that reminded me of you:"
 
 BLOG SECTION FORMAT:
 <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 0;">
@@ -762,22 +763,22 @@ BLOG SECTION FORMAT:
 
 [Repeat for each blog - use featured_image from blog data, or use placeholder: https://via.placeholder.com/250x167/2563eb/ffffff?text=Blog]
 
-CLOSING EXAMPLES (simple and direct):
-- "Let me know if you want to chat."
-- "Happy to connect if useful."
-- "Feel free to reach out if you want to talk."
-- "Let me know if any of this is helpful."
+CLOSING EXAMPLES (warm and genuine):
+- "Would love to catch up sometime if you're open to it — always enjoy talking shop."
+- "If you ever want to grab coffee (virtual or otherwise) and talk through next steps, I'm here."
+- "Let's connect soon — I'd love to hear what you're thinking about."
+- "Happy to be a sounding board anytime if you want to chat about where things are headed."
 
 Sign-off: "Best,"
 
 CRITICAL RULES:
 - NO subject line in the email body (will be generated separately)
 - NO signature name after "Best," - just "Best,"
-- Under 150 words before blog sections
-- NO fluffy language — be direct and factual
-- NO excessive compliments or praise
+- Under 180 words before blog sections
+- Sound like a real person reaching out, not a templated message
 - Use HTML formatting for blog sections EXACTLY as shown
-- Keep blog justifications factual and specific, not gushing
+- Make blog justifications PERSONAL to this specific person
+- Each email should feel like it was written just for them
 - Do NOT mention jobs in this approach"""
 
     try:
