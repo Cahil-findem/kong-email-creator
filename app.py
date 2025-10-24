@@ -753,15 +753,15 @@ BLOG TRANSITION (make it natural):
 - "Been reading a few things that reminded me of you:"
 
 BLOG SECTION FORMAT:
+<p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280; line-height: 1.5;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
 <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 0;">
-  <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 250px; height: 167px; object-fit: cover; border-radius: 12px; flex-shrink: 0;">
+  <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" style="width: 250px; height: 144px; object-fit: cover; border-radius: 12px; flex-shrink: 0;">
   <div style="flex: 1; min-width: 0;">
     <a href="[BLOG_URL]" style="font-size: 14px; font-weight: 500; color: #101828; text-decoration: none; display: block; line-height: 1.4; margin: 0;">[BLOG_TITLE]</a>
-    <p style="margin: 0; font-size: 14px; color: #6b7280; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">[One personal sentence about why THIS person would find this valuable — connect it to their specific experience or interests.]</p>
   </div>
 </div>
 
-[Repeat for each blog - use featured_image from blog data, or use placeholder: https://via.placeholder.com/250x167/2563eb/ffffff?text=Blog]
+[Repeat for each blog - use featured_image from blog data, or use placeholder: https://via.placeholder.com/250x144/2563eb/ffffff?text=Blog]
 
 CLOSING EXAMPLES (warm and genuine):
 - "Would love to catch up sometime if you're open to it — always enjoy talking shop."
