@@ -52,7 +52,20 @@ class CandidateBlogMatcher:
             ).execute()
 
             if result.data:
-                return result.data[0]
+                candidate = result.data[0]
+
+                # Also fetch pinned_blogs from candidate_profiles table
+                profile_result = self.supabase.table('candidate_profiles')\
+                    .select('pinned_blogs')\
+                    .eq('candidate_id', candidate_id)\
+                    .execute()
+
+                if profile_result.data and len(profile_result.data) > 0:
+                    candidate['pinned_blogs'] = profile_result.data[0].get('pinned_blogs', [])
+                else:
+                    candidate['pinned_blogs'] = []
+
+                return candidate
             else:
                 logger.warning(f"No candidate found with ID: {candidate_id}")
                 return None
@@ -60,6 +73,50 @@ class CandidateBlogMatcher:
         except Exception as e:
             logger.error(f"Error fetching candidate: {str(e)}")
             return None
+
+    def get_pinned_blogs_details(self, pinned_blog_urls: List[str]) -> List[Dict]:
+        """
+        Fetch full blog details for pinned blog URLs
+
+        Args:
+            pinned_blog_urls: List of blog URLs to fetch
+
+        Returns:
+            List of blog post details
+        """
+        if not pinned_blog_urls:
+            return []
+
+        try:
+            result = self.supabase.table('blog_posts')\
+                .select('id, title, url, author, published_date, featured_image')\
+                .in_('url', pinned_blog_urls)\
+                .execute()
+
+            if result.data:
+                # Format to match auto-matched blog structure
+                pinned_blogs = []
+                for blog in result.data:
+                    pinned_blogs.append({
+                        'blog_post_id': blog['id'],
+                        'blog_title': blog['title'],
+                        'blog_url': blog['url'],
+                        'blog_author': blog.get('author', ''),
+                        'blog_published_date': blog.get('published_date', ''),
+                        'blog_featured_image': blog.get('featured_image', ''),
+                        'best_matching_chunk': '[Manually pinned blog]',
+                        'max_similarity': 1.0,  # Mark as manually selected
+                        'is_pinned': True
+                    })
+                logger.info(f"Found {len(pinned_blogs)} pinned blogs")
+                return pinned_blogs
+            else:
+                logger.warning("No pinned blogs found in database")
+                return []
+
+        except Exception as e:
+            logger.error(f"Error fetching pinned blogs: {str(e)}")
+            return []
 
     def get_all_candidates_with_embeddings(self) -> List[Dict]:
         """Fetch all candidates that have embeddings"""
@@ -255,17 +312,46 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
     ) -> List[Dict]:
         """
         Hybrid approach: Use embeddings to get top N, then LLM to select final few
+        Also supports pinned blogs - these will always be included first
 
         Args:
             candidate_id: External candidate ID
             match_threshold: Minimum similarity score (0-1)
             top_n_embeddings: Number of blogs to get from embedding search
-            final_n_llm: Number of blogs to select with LLM from top_n
+            final_n_llm: Number of blogs to select with LLM from top_n (including pinned)
 
         Returns:
-            List of final selected blog posts
+            List of final selected blog posts (pinned first, then auto-matched)
         """
         try:
+            # Get candidate info first to check for pinned blogs
+            candidate = self.get_candidate_by_id(candidate_id)
+            if not candidate:
+                logger.warning(f"Candidate {candidate_id} not found")
+                return []
+
+            # Step 0: Check for pinned blogs
+            pinned_blog_urls = candidate.get('pinned_blogs', [])
+            pinned_blogs = []
+
+            if pinned_blog_urls:
+                logger.info(f"Found {len(pinned_blog_urls)} pinned blogs for candidate")
+                pinned_blogs = self.get_pinned_blogs_details(pinned_blog_urls)
+
+                # If we have enough pinned blogs, return just those
+                if len(pinned_blogs) >= final_n_llm:
+                    logger.info(f"Returning {final_n_llm} pinned blogs only")
+                    return pinned_blogs[:final_n_llm]
+
+            # Calculate how many auto-matched blogs we need
+            remaining_slots = final_n_llm - len(pinned_blogs)
+
+            if remaining_slots <= 0:
+                logger.info("All slots filled by pinned blogs")
+                return pinned_blogs[:final_n_llm]
+
+            logger.info(f"Need {remaining_slots} auto-matched blogs to fill remaining slots")
+
             # Step 1: Get top N blogs using embeddings
             logger.info(f"Step 1: Getting top {top_n_embeddings} blogs using embeddings...")
             top_blogs = self.find_blogs_for_candidate(
@@ -276,27 +362,30 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
             )
 
             if not top_blogs:
-                logger.warning(f"No blogs found for candidate {candidate_id}")
-                return []
+                logger.warning(f"No auto-matched blogs found for candidate {candidate_id}")
+                # Return pinned blogs only if no auto-matches found
+                return pinned_blogs
 
-            logger.info(f"Found {len(top_blogs)} blogs from embedding search")
+            # Filter out any blogs that are already pinned
+            pinned_urls = set(pinned_blog_urls)
+            top_blogs = [b for b in top_blogs if b['blog_url'] not in pinned_urls]
 
-            # Step 2: Use LLM to select best N from top blogs
-            logger.info(f"Step 2: Using LLM to select best {final_n_llm} blogs...")
-            candidate = self.get_candidate_by_id(candidate_id)
+            logger.info(f"Found {len(top_blogs)} blogs from embedding search (after filtering pinned)")
 
-            if not candidate:
-                logger.warning("Candidate not found, returning embedding results")
-                return top_blogs[:final_n_llm]
+            # Step 2: Use LLM to select best N from top blogs for remaining slots
+            logger.info(f"Step 2: Using LLM to select best {remaining_slots} blogs...")
 
-            selected_blogs = self.select_best_blogs_with_llm(
+            selected_auto_blogs = self.select_best_blogs_with_llm(
                 top_blogs,
                 candidate,
-                num_to_select=final_n_llm
+                num_to_select=remaining_slots
             )
 
-            logger.info(f"Hybrid selection complete: {len(selected_blogs)} blogs selected")
-            return selected_blogs
+            # Combine pinned blogs (first) with auto-selected blogs
+            final_blogs = pinned_blogs + selected_auto_blogs
+
+            logger.info(f"Hybrid selection complete: {len(pinned_blogs)} pinned + {len(selected_auto_blogs)} auto-matched = {len(final_blogs)} total")
+            return final_blogs
 
         except Exception as e:
             logger.error(f"Hybrid blog selection error: {str(e)}")
