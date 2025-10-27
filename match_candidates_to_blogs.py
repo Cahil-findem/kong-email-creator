@@ -294,6 +294,9 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
             selected_indices = json.loads(clean_result)
             selected_blogs = [blogs[idx - 1] for idx in selected_indices if 0 < idx <= len(blogs)]
 
+            # Enforce the num_to_select limit (in case LLM returns more than requested)
+            selected_blogs = selected_blogs[:num_to_select]
+
             logger.info(f"LLM selected {len(selected_blogs)} blogs: {[b['blog_title'] for b in selected_blogs]}")
 
             return selected_blogs if selected_blogs else blogs[:num_to_select]
@@ -586,7 +589,7 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
     def print_recommendations(
         self,
         candidate_id: str,
-        num_articles: int = 5,
+        num_articles: int = 3,
         use_hybrid: bool = False,
         top_n_embeddings: int = 10
     ):
@@ -595,7 +598,7 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
 
         Args:
             candidate_id: External candidate ID
-            num_articles: Number of articles to show
+            num_articles: Number of articles to show (default: 3)
             use_hybrid: If True, use hybrid (embeddings + LLM) approach
             top_n_embeddings: Number of blogs to get from embeddings (only for hybrid)
         """
@@ -673,7 +676,7 @@ def main():
     else:
         # Process single candidate
         candidate_id = sys.argv[1]
-        num_articles = 5
+        num_articles = 3  # Default to 3 blogs
 
         # Parse num_articles if provided and not --hybrid
         if len(sys.argv) > 2 and sys.argv[2] != '--hybrid':
