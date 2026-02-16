@@ -36,13 +36,22 @@ The API uses a **three-field embedding system** for enhanced candidate understan
 1. **`/api/process-candidate`** - All-in-one convenience endpoint for initial processing
 2. **`/api/update-context`** - Update specific sections (job_preferences or interests)
 3. **`/api/generate-email`** - Generate email from existing candidate data
-4. **`/api/health`** - Health check
+4. **`/api/process-and-email`** - Check if candidate exists, generate email (skip processing if already done)
+5. **`/api/emails/check`** - Check if generated emails exist for a candidate
+6. **`/api/emails`** - Retrieve stored email records for a candidate
+7. **`/api/emails/<id>/status`** - Update email status (e.g. generated → sent)
+8. **`/api/health`** - Health check
 
 ### Common Workflows
 
 **Initial candidate processing:**
 ```
 POST /api/process-candidate
+```
+
+**Smart processing (skip if already done):**
+```
+POST /api/process-and-email  →  returns email if candidate exists, 404 if not
 ```
 
 **Iterative refinement (after learning new info about candidate):**
@@ -54,6 +63,13 @@ POST /api/process-candidate
 **Regenerate email (A/B testing, different tone, etc.):**
 ```
 POST /api/generate-email
+```
+
+**Track email lifecycle:**
+```
+1. GET /api/emails/check?candidate_id=...  →  check if emails exist
+2. GET /api/emails?candidate_id=...        →  retrieve email records
+3. PATCH /api/emails/123/status            →  mark as sent
 ```
 
 ---
@@ -349,7 +365,183 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 
 ---
 
-### 4. Health Check
+### 4. Process and Email (Smart Endpoint)
+
+**POST** `/api/process-and-email`
+
+Checks if a candidate has already been processed. If so, generates an email using existing data. If not, returns 404 so the caller knows to use `/api/process-candidate` first.
+
+**Use cases:**
+- Batch workflows where some candidates may already be processed
+- Avoiding redundant processing when re-running pipelines
+
+#### Request
+
+**Headers:**
+```
+Content-Type: application/json
+X-API-Key: your-secret-api-key (if authentication enabled)
+```
+
+**Body:**
+```json
+{
+  "candidate_id": "candidate_id_123"
+}
+```
+
+#### Response (Success - 200 OK, candidate exists)
+
+```json
+{
+  "success": true,
+  "exists": true,
+  "candidate": {
+    "id": "candidate_id_123",
+    "name": "John Doe",
+    "title": "Senior Software Engineer",
+    "company": "Acme Corp",
+    "location": "San Francisco, CA, USA"
+  },
+  "candidate_profile": { ... },
+  "professional_summary": "...",
+  "job_preferences": "...",
+  "interests": "...",
+  "blog_matches": [...],
+  "email": {
+    "subject": "...",
+    "body": "..."
+  },
+  "timestamp": "2026-02-16T..."
+}
+```
+
+#### Response (404 - Candidate not processed)
+
+```json
+{
+  "exists": false,
+  "error": "Candidate candidate_id_123 has not been processed yet. Use /api/process-candidate first."
+}
+```
+
+---
+
+### 5. Check Emails
+
+**GET** `/api/emails/check`
+
+Check if generated emails exist for a candidate. Useful for quickly determining whether to skip email generation.
+
+#### Query Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `candidate_id` | Yes | The candidate's unique identifier |
+| `email_type` | No | Filter by type (`job-focused` or `relationship-nurture`) |
+| `status` | No | Filter by status (`generated`, `sent`, etc.) |
+
+#### Request
+
+```
+GET /api/emails/check?candidate_id=candidate_id_123&status=generated
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "exists": true,
+  "count": 2
+}
+```
+
+---
+
+### 6. Get Emails
+
+**GET** `/api/emails`
+
+Retrieve stored email records (including HTML) for a candidate. Results are ordered by creation date (newest first).
+
+#### Query Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `candidate_id` | Yes | The candidate's unique identifier |
+| `email_type` | No | Filter by type (`job-focused` or `relationship-nurture`) |
+| `status` | No | Filter by status (`generated`, `sent`, etc.) |
+
+#### Request
+
+```
+GET /api/emails?candidate_id=candidate_id_123
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "success": true,
+  "emails": [
+    {
+      "id": 1,
+      "candidate_id": "candidate_id_123",
+      "email_type": "relationship-nurture",
+      "status": "generated",
+      "email_subject": "Thought you'd find these interesting",
+      "email_html": "<html>...</html>",
+      "created_at": "2026-02-16T14:30:00.000Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### 7. Update Email Status
+
+**PATCH** `/api/emails/<id>/status`
+
+Update the status of a specific email record (e.g. mark as sent).
+
+#### Request
+
+**Headers:**
+```
+Content-Type: application/json
+X-API-Key: your-secret-api-key (if authentication enabled)
+```
+
+**Body:**
+```json
+{
+  "status": "sent"
+}
+```
+
+#### Response (Success - 200 OK)
+
+```json
+{
+  "success": true,
+  "id": 1,
+  "status": "sent"
+}
+```
+
+#### Response (404 - Email not found)
+
+```json
+{
+  "error": "Email record 1 not found"
+}
+```
+
+---
+
+### 8. Health Check
 
 **GET** `/api/health`
 
@@ -573,6 +765,34 @@ curl -X POST https://kong-email-creator.vercel.app/api/generate-email \
   -d '{"candidate_id": "candidate_id_123"}'
 ```
 
+**Smart process-and-email (skip processing if exists):**
+```bash
+curl -X POST https://kong-email-creator.vercel.app/api/process-and-email \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
+  -d '{"candidate_id": "candidate_id_123"}'
+```
+
+**Check if emails exist:**
+```bash
+curl "https://kong-email-creator.vercel.app/api/emails/check?candidate_id=candidate_id_123&status=generated" \
+  -H "X-API-Key: your-secret-api-key"
+```
+
+**Get email records:**
+```bash
+curl "https://kong-email-creator.vercel.app/api/emails?candidate_id=candidate_id_123" \
+  -H "X-API-Key: your-secret-api-key"
+```
+
+**Mark email as sent:**
+```bash
+curl -X PATCH https://kong-email-creator.vercel.app/api/emails/1/status \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
+  -d '{"status": "sent"}'
+```
+
 ---
 
 ## Performance
@@ -588,6 +808,10 @@ curl -X POST https://kong-email-creator.vercel.app/api/generate-email \
 | `/api/process-candidate` | 5-8s | Extract → 3 Summaries → Vectorize (3x) → Match → Email |
 | `/api/update-context` | 2-3s | Append context → Re-vectorize section → Update DB |
 | `/api/generate-email` | 4-5s | Fetch profile → Match blogs → Generate email |
+| `/api/process-and-email` | 4-5s | Check existence → Fetch profile → Match blogs → Generate email |
+| `/api/emails/check` | <1s | Query generated_emails table |
+| `/api/emails` | <1s | Query generated_emails table |
+| `/api/emails/<id>/status` | <1s | Update generated_emails row |
 
 ### Processing Steps Detail
 
@@ -623,6 +847,8 @@ curl -X POST https://kong-email-creator.vercel.app/api/generate-email \
 - **`/api/process-candidate`:** ~$0.003 per request (3 embeddings + 2 LLM calls)
 - **`/api/update-context`:** ~$0.001 per request (1 embedding)
 - **`/api/generate-email`:** ~$0.002 per request (2 LLM calls)
+- **`/api/process-and-email`:** ~$0.002 per request (2 LLM calls, same as generate-email)
+- **`/api/emails/check`**, **`/api/emails`**, **`/api/emails/<id>/status`:** ~$0 (database queries only)
 
 ---
 
@@ -725,6 +951,9 @@ The more information provided, the better the three-field summaries and blog mat
 - [ ] Optionally display blog matches
 - [ ] Test section-based context updates (interests and job_preferences)
 - [ ] Test iterative refinement flow (update context → regenerate)
+- [ ] Use `/api/process-and-email` for smart skip-if-exists logic
+- [ ] Use `/api/emails/check` to avoid duplicate email generation
+- [ ] Use `/api/emails/<id>/status` to track email lifecycle (generated → sent)
 - [ ] Add error logging for debugging
 
 ---
@@ -797,6 +1026,6 @@ If you were using the old `semantic_summary` field:
 
 ---
 
-Last Updated: October 14, 2025
-API Version: 3.0 (Three-Field Embedding System)
+Last Updated: February 16, 2026
+API Version: 4.0 (Email Storage & Management)
 Documentation maintained by: Kong Email Generator Team

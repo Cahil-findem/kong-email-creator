@@ -975,6 +975,20 @@ def process_candidate():
         combined_summary = f"{summaries['professional_summary']}\n\n{summaries['job_preferences']}\n\n{summaries['interests']}"
         email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches)
 
+        # Store generated email in database
+        try:
+            supabase = vectorizer.supabase
+            supabase.table('generated_emails').insert({
+                'candidate_id': candidate_id,
+                'email_type': email_content.get('email_approach', 'unknown'),
+                'status': 'generated',
+                'email_subject': email_content.get('subject', ''),
+                'email_html': email_content.get('body', '')
+            }).execute()
+            logger.info(f"Stored generated email for candidate {candidate_id}")
+        except Exception as store_err:
+            logger.error(f"Failed to store generated email: {str(store_err)}")
+
         # Return response
         response = {
             'success': True,
@@ -1251,6 +1265,20 @@ def generate_email():
         logger.info("Generating email...")
         email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches)
 
+        # Store generated email in database
+        try:
+            supabase = matcher.supabase
+            supabase.table('generated_emails').insert({
+                'candidate_id': candidate_id,
+                'email_type': email_content.get('email_approach', 'unknown'),
+                'status': 'generated',
+                'email_subject': email_content.get('subject', ''),
+                'email_html': email_content.get('body', '')
+            }).execute()
+            logger.info(f"Stored generated email for candidate {candidate_id}")
+        except Exception as store_err:
+            logger.error(f"Failed to store generated email: {str(store_err)}")
+
         # Return response
         response = {
             'success': True,
@@ -1282,6 +1310,147 @@ def generate_email():
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
+@app.route('/api/process-and-email', methods=['POST'])
+def process_and_email():
+    """
+    Check if a candidate has been processed, and if so generate an email.
+
+    Request:
+    {
+        "candidate_id": "pub_lnkd_123"
+    }
+
+    Returns 404 if candidate hasn't been processed yet (caller should use
+    /api/process-candidate first). Otherwise generates and returns the email.
+    """
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        data = request.json
+        if not data or 'candidate_id' not in data:
+            return jsonify({'error': 'Invalid request. Provide candidate_id.'}), 400
+
+        candidate_id = data['candidate_id']
+        logger.info(f"process-and-email: checking if {candidate_id} exists...")
+
+        # Check if candidate already exists in candidate_profiles
+        supabase = vectorizer.supabase
+        existing = supabase.table('candidate_profiles').select('id').eq(
+            'candidate_id', candidate_id
+        ).execute()
+
+        if not existing.data:
+            return jsonify({
+                'exists': False,
+                'error': f'Candidate {candidate_id} has not been processed yet. Use /api/process-candidate first.'
+            }), 404
+
+        # Candidate exists — generate email using existing data
+        logger.info(f"Candidate {candidate_id} found, generating email")
+
+        candidate_profile = matcher.get_candidate_by_id(candidate_id)
+        if not candidate_profile:
+            return jsonify({'error': f'Candidate {candidate_id} not found in database'}), 404
+
+        # Fetch raw_profile
+        raw_profile_data = supabase.table('candidate_profiles').select('raw_profile').eq(
+            'id', candidate_profile['profile_id']
+        ).execute()
+        raw_profile_json = None
+        if raw_profile_data.data and raw_profile_data.data[0].get('raw_profile'):
+            raw_profile_json = raw_profile_data.data[0]['raw_profile']
+
+        candidate_info = {
+            'candidate_id': candidate_id,
+            'full_name': candidate_profile.get('full_name', ''),
+            'current_title': candidate_profile.get('current_title', ''),
+            'current_company': candidate_profile.get('current_company', ''),
+            'location': candidate_profile.get('location', ''),
+            'about_me': candidate_profile.get('about_me', ''),
+            'skills': [],
+            'work_experience': []
+        }
+
+        # Get three-field summaries
+        try:
+            embedding_data = supabase.table('candidate_embeddings').select(
+                'professional_summary, job_preferences, interests, embedding_text'
+            ).eq('candidate_profile_id', candidate_profile['profile_id']).execute()
+
+            if embedding_data.data:
+                professional_summary = embedding_data.data[0].get('professional_summary', '')
+                job_preferences = embedding_data.data[0].get('job_preferences', '')
+                interests = embedding_data.data[0].get('interests', '')
+                if not professional_summary:
+                    professional_summary = embedding_data.data[0].get('embedding_text', '')
+            else:
+                professional_summary = f"{candidate_info['full_name']} - {candidate_info['current_title']}"
+                job_preferences = ""
+                interests = ""
+        except Exception as e:
+            logger.error(f"Error retrieving summaries: {str(e)}")
+            professional_summary = f"{candidate_info['full_name']} - {candidate_info['current_title']}"
+            job_preferences = ""
+            interests = ""
+
+        combined_summary = professional_summary
+        if job_preferences:
+            combined_summary += f"\n\n{job_preferences}"
+        if interests:
+            combined_summary += f"\n\n{interests}"
+
+        top_blogs = match_blogs_for_candidate_internal(candidate_id)
+        if not top_blogs:
+            return jsonify({'error': 'No matching blog posts found.'}), 404
+
+        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35)
+
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches)
+
+        # Store generated email
+        try:
+            supabase.table('generated_emails').insert({
+                'candidate_id': candidate_id,
+                'email_type': email_content.get('email_approach', 'unknown'),
+                'status': 'generated',
+                'email_subject': email_content.get('subject', ''),
+                'email_html': email_content.get('body', '')
+            }).execute()
+            logger.info(f"Stored generated email for candidate {candidate_id}")
+        except Exception as store_err:
+            logger.error(f"Failed to store generated email: {str(store_err)}")
+
+        response = {
+            'success': True,
+            'exists': True,
+            'candidate': {
+                'id': candidate_id,
+                'name': candidate_info['full_name'],
+                'title': candidate_info['current_title'],
+                'company': candidate_info['current_company'],
+                'location': candidate_info['location']
+            },
+            'candidate_profile': raw_profile_json,
+            'professional_summary': professional_summary,
+            'job_preferences': job_preferences,
+            'interests': interests,
+            'blog_matches': format_blog_response(top_blogs),
+            'email': email_content,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        if job_matches:
+            response['job_matches'] = job_matches
+
+        logger.info(f"Successfully generated email for candidate {candidate_id}!")
+        return jsonify(response)
+
+    except Exception as e:
+        logger.error(f"Error in process-and-email: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -1290,6 +1459,112 @@ def health_check():
         'service': 'candidate-email-generator',
         'timestamp': datetime.now().isoformat()
     })
+
+
+# ============================================================================
+# EMAIL MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/emails/check', methods=['GET'])
+def check_emails():
+    """Check if generated emails exist for a candidate"""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        candidate_id = request.args.get('candidate_id')
+        if not candidate_id:
+            return jsonify({'error': 'candidate_id query parameter is required'}), 400
+
+        supabase = vectorizer.supabase
+        query = supabase.table('generated_emails').select('id', count='exact').eq('candidate_id', candidate_id)
+
+        email_type = request.args.get('email_type')
+        if email_type:
+            query = query.eq('email_type', email_type)
+
+        status = request.args.get('status')
+        if status:
+            query = query.eq('status', status)
+
+        result = query.execute()
+        count = result.count if result.count is not None else len(result.data)
+
+        return jsonify({
+            'exists': count > 0,
+            'count': count
+        })
+
+    except Exception as e:
+        logger.error(f"Error checking emails: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
+@app.route('/api/emails', methods=['GET'])
+def get_emails():
+    """Retrieve email records for a candidate"""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        candidate_id = request.args.get('candidate_id')
+        if not candidate_id:
+            return jsonify({'error': 'candidate_id query parameter is required'}), 400
+
+        supabase = vectorizer.supabase
+        query = supabase.table('generated_emails').select('*').eq('candidate_id', candidate_id)
+
+        email_type = request.args.get('email_type')
+        if email_type:
+            query = query.eq('email_type', email_type)
+
+        status = request.args.get('status')
+        if status:
+            query = query.eq('status', status)
+
+        result = query.order('created_at', desc=True).execute()
+
+        return jsonify({
+            'success': True,
+            'emails': result.data,
+            'count': len(result.data)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching emails: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
+@app.route('/api/emails/<int:email_id>/status', methods=['PATCH'])
+def update_email_status(email_id):
+    """Update the status of a specific email record"""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        data = request.json
+        if not data or 'status' not in data:
+            return jsonify({'error': 'Request body must include status'}), 400
+
+        new_status = data['status']
+
+        supabase = vectorizer.supabase
+        result = supabase.table('generated_emails').update({
+            'status': new_status
+        }).eq('id', email_id).execute()
+
+        if not result.data:
+            return jsonify({'error': f'Email record {email_id} not found'}), 404
+
+        return jsonify({
+            'success': True,
+            'id': email_id,
+            'status': new_status
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating email status: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
 # ============================================================================
