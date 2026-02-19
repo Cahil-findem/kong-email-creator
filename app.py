@@ -801,10 +801,10 @@ CRITICAL RULES:
 The email is about a {job_title} role that matches their background.
 
 Style examples:
-- "{job_title} opportunity at [Company]"
+- "{job_title} opportunity at Kong"
 - "Thought of you for our {job_title} role"
 - "{first_name}: {job_title} role that matches your background"
-- "Great fit for you: {job_title} at [Company]"
+- "Great fit for you: {job_title} at Kong"
 - "{job_title} opening — thought you'd be interested"
 
 Keep it under 60 characters, no quotation marks, use title case. Be clear it's about a specific role."""
@@ -832,7 +832,7 @@ Keep it under 60 characters, no quotation marks, use title case."""
             max_tokens=25
         )
 
-        subject = subject_response.choices[0].message.content.strip().replace('"', '').replace("'", "")
+        subject = subject_response.choices[0].message.content.strip().replace('"', '').replace("'", "").replace("[Company]", "Kong")
 
         logger.info(f"Generated {'job-focused' if use_job_focused_approach else 'relationship-nurture'} email for {name}")
 
