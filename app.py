@@ -1576,6 +1576,110 @@ def update_email_status(email_id):
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
+@app.route('/api/candidate/<candidate_id>', methods=['GET'])
+def get_candidate(candidate_id):
+    """Fetch candidate enrichment data without generating an email. Read-only, no side effects."""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        # Get candidate from database
+        candidate_profile = matcher.get_candidate_by_id(candidate_id)
+        if not candidate_profile:
+            return jsonify({'error': f'Candidate {candidate_id} not found in database'}), 404
+
+        # Fetch raw_profile JSON from candidate_profiles table
+        supabase = matcher.supabase
+        raw_profile_data = supabase.table('candidate_profiles').select('raw_profile').eq(
+            'id', candidate_profile['profile_id']
+        ).execute()
+
+        raw_profile_json = None
+        if raw_profile_data.data and raw_profile_data.data[0].get('raw_profile'):
+            raw_profile_json = raw_profile_data.data[0]['raw_profile']
+
+        # Parse raw_profile if it's a string so response is always a dict
+        candidate_profile_parsed = {}
+        if raw_profile_json:
+            if isinstance(raw_profile_json, str):
+                try:
+                    candidate_profile_parsed = json.loads(raw_profile_json)
+                except json.JSONDecodeError:
+                    candidate_profile_parsed = {'raw': raw_profile_json}
+            else:
+                candidate_profile_parsed = raw_profile_json
+
+        # Build candidate_info object
+        candidate_info = {
+            'id': candidate_id,
+            'name': candidate_profile.get('full_name', ''),
+            'title': candidate_profile.get('current_title', ''),
+            'company': candidate_profile.get('current_company', ''),
+            'location': candidate_profile.get('location', ''),
+        }
+
+        # Get three-field summaries from database
+        professional_summary = ""
+        interests = ""
+        job_preferences = ""
+        try:
+            embedding_data = supabase.table('candidate_embeddings').select(
+                'professional_summary, job_preferences, interests, embedding_text'
+            ).eq('candidate_profile_id', candidate_profile['profile_id']).execute()
+
+            if embedding_data.data:
+                professional_summary = embedding_data.data[0].get('professional_summary', '')
+                job_preferences = embedding_data.data[0].get('job_preferences', '')
+                interests = embedding_data.data[0].get('interests', '')
+
+                # Fallback to legacy field if new fields not available
+                if not professional_summary:
+                    professional_summary = embedding_data.data[0].get('embedding_text', '')
+        except Exception as e:
+            logger.error(f"Error retrieving summaries: {str(e)}")
+
+        # Match blogs — return empty array if none found
+        top_blogs = match_blogs_for_candidate_internal(candidate_id)
+        blog_matches = format_blog_response(top_blogs) if top_blogs else []
+
+        return jsonify({
+            'success': True,
+            'candidate': candidate_info,
+            'candidate_profile': candidate_profile_parsed,
+            'professional_summary': professional_summary,
+            'interests': interests,
+            'job_preferences': job_preferences,
+            'blog_matches': blog_matches
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching candidate data: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
+@app.route('/api/jobs/<job_id>', methods=['GET'])
+def get_job(job_id):
+    """Fetch full job details by job_id. Read-only, no side effects."""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        supabase = matcher.supabase
+        result = supabase.table('job_postings').select('*').eq('job_id', job_id).execute()
+
+        if not result.data:
+            return jsonify({'error': f'Job {job_id} not found'}), 404
+
+        return jsonify({
+            'success': True,
+            'job': result.data[0]
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching job details: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
 # ============================================================================
 # RUN APP
 # ============================================================================
