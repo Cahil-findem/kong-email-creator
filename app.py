@@ -978,13 +978,16 @@ def process_candidate():
         # Store generated email in database
         try:
             supabase = vectorizer.supabase
-            supabase.table('generated_emails').insert({
+            email_record = {
                 'candidate_id': candidate_id,
                 'email_type': email_content.get('email_approach', 'unknown'),
                 'status': 'generated',
                 'email_subject': email_content.get('subject', ''),
                 'email_html': email_content.get('body', '')
-            }).execute()
+            }
+            if job_matches and email_content.get('email_approach') == 'job-focused':
+                email_record['job_matches'] = [job['job_id'] for job in job_matches]
+            supabase.table('generated_emails').insert(email_record).execute()
             logger.info(f"Stored generated email for candidate {candidate_id}")
         except Exception as store_err:
             logger.error(f"Failed to store generated email: {str(store_err)}")
@@ -1268,13 +1271,16 @@ def generate_email():
         # Store generated email in database
         try:
             supabase = matcher.supabase
-            supabase.table('generated_emails').insert({
+            email_record = {
                 'candidate_id': candidate_id,
                 'email_type': email_content.get('email_approach', 'unknown'),
                 'status': 'generated',
                 'email_subject': email_content.get('subject', ''),
                 'email_html': email_content.get('body', '')
-            }).execute()
+            }
+            if job_matches and email_content.get('email_approach') == 'job-focused':
+                email_record['job_matches'] = [job['job_id'] for job in job_matches]
+            supabase.table('generated_emails').insert(email_record).execute()
             logger.info(f"Stored generated email for candidate {candidate_id}")
         except Exception as store_err:
             logger.error(f"Failed to store generated email: {str(store_err)}")
@@ -1410,13 +1416,16 @@ def process_and_email():
 
         # Store generated email
         try:
-            supabase.table('generated_emails').insert({
+            email_record = {
                 'candidate_id': candidate_id,
                 'email_type': email_content.get('email_approach', 'unknown'),
                 'status': 'generated',
                 'email_subject': email_content.get('subject', ''),
                 'email_html': email_content.get('body', '')
-            }).execute()
+            }
+            if job_matches and email_content.get('email_approach') == 'job-focused':
+                email_record['job_matches'] = [job['job_id'] for job in job_matches]
+            supabase.table('generated_emails').insert(email_record).execute()
             logger.info(f"Stored generated email for candidate {candidate_id}")
         except Exception as store_err:
             logger.error(f"Failed to store generated email: {str(store_err)}")
