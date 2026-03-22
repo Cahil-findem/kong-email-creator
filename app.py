@@ -1681,6 +1681,215 @@ def get_job(job_id):
 
 
 # ============================================================================
+# COMPANY PREFERENCES HELPERS
+# ============================================================================
+
+# camelCase (API) <-> snake_case (DB) field mappings
+_PREF_API_TO_DB = {
+    'goal': 'goal',
+    'doNotContactReasons': 'do_not_contact_reasons',
+    'nurtureEmailFeedback': 'nurture_email_feedback',
+    'jobEmailFeedback': 'job_email_feedback',
+}
+
+_PREF_DB_TO_API = {v: k for k, v in _PREF_API_TO_DB.items()}
+
+# Mutable fields (excludes id, company_name, timestamps)
+_PREF_MUTABLE_FIELDS = set(_PREF_API_TO_DB.keys())
+
+# Default values for new/reset rows
+_PREF_DEFAULTS = {
+    'goal': 'both',
+    'do_not_contact_reasons': [],
+    'nurture_email_feedback': '',
+    'job_email_feedback': '',
+}
+
+VALID_GOALS = {'applicants', 'warm', 'both'}
+
+
+def _prefs_db_to_api(row):
+    """Convert a DB row dict to the API response shape."""
+    return {
+        'id': row['id'],
+        'companyName': row['company_name'],
+        'goal': row['goal'],
+        'doNotContactReasons': row['do_not_contact_reasons'],
+        'nurtureEmailFeedback': row['nurture_email_feedback'],
+        'jobEmailFeedback': row['job_email_feedback'],
+        'createdAt': row['created_at'],
+    }
+
+
+def _prefs_api_to_db(data):
+    """Convert request body to DB columns, only mapping known mutable fields."""
+    result = {}
+    for api_key, db_key in _PREF_API_TO_DB.items():
+        if api_key in data:
+            result[db_key] = data[api_key]
+    return result
+
+
+# ============================================================================
+# COMPANY PREFERENCES ENDPOINTS
+# ============================================================================
+
+@app.route('/api/company-preferences/<company_name>', methods=['GET'])
+def get_company_preferences(company_name):
+    """Fetch company preferences by company_name or by id query param."""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        supabase = vectorizer.supabase
+
+        # If ?id=<int> is provided, look up by ID instead
+        pref_id = request.args.get('id')
+        if pref_id is not None:
+            try:
+                pref_id = int(pref_id)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Invalid id parameter; must be an integer'}), 400
+            result = supabase.table('customer_preferences').select('*').eq('id', pref_id).execute()
+        else:
+            result = supabase.table('customer_preferences').select('*').eq('company_name', company_name).execute()
+
+        if not result.data:
+            return jsonify({'error': f'Preferences not found for company: {company_name}'}), 404
+
+        return jsonify({
+            'success': True,
+            'preferences': _prefs_db_to_api(result.data[0])
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching company preferences: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
+@app.route('/api/company-preferences/<company_name>', methods=['PUT'])
+def put_company_preferences(company_name):
+    """Create or fully replace company preferences. All mutable fields required."""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        # Validate all mutable fields are present
+        missing = _PREF_MUTABLE_FIELDS - set(data.keys())
+        if missing:
+            return jsonify({'error': f'Missing required fields: {", ".join(sorted(missing))}'}), 400
+
+        # Validate goal
+        if data.get('goal') not in VALID_GOALS:
+            return jsonify({'error': f'Invalid goal. Must be one of: {", ".join(sorted(VALID_GOALS))}'}), 400
+
+        # Validate doNotContactReasons is a list
+        if not isinstance(data.get('doNotContactReasons'), list):
+            return jsonify({'error': 'doNotContactReasons must be a list'}), 400
+
+        db_fields = _prefs_api_to_db(data)
+        db_fields['company_name'] = company_name
+
+        supabase = vectorizer.supabase
+
+        # Check if row exists
+        existing = supabase.table('customer_preferences').select('id').eq('company_name', company_name).execute()
+
+        if existing.data:
+            result = supabase.table('customer_preferences').update(db_fields).eq('company_name', company_name).execute()
+        else:
+            result = supabase.table('customer_preferences').insert(db_fields).execute()
+
+        return jsonify({
+            'success': True,
+            'preferences': _prefs_db_to_api(result.data[0])
+        })
+
+    except Exception as e:
+        logger.error(f"Error saving company preferences: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
+@app.route('/api/company-preferences/<company_name>', methods=['PATCH'])
+def patch_company_preferences(company_name):
+    """Partially update company preferences. Only provided fields are changed."""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        # Validate only provided fields
+        if 'goal' in data and data['goal'] not in VALID_GOALS:
+            return jsonify({'error': f'Invalid goal. Must be one of: {", ".join(sorted(VALID_GOALS))}'}), 400
+
+        if 'doNotContactReasons' in data and not isinstance(data['doNotContactReasons'], list):
+            return jsonify({'error': 'doNotContactReasons must be a list'}), 400
+
+        db_fields = _prefs_api_to_db(data)
+        if not db_fields:
+            return jsonify({'error': 'No valid fields provided'}), 400
+
+        supabase = vectorizer.supabase
+
+        # Check if row exists
+        existing = supabase.table('customer_preferences').select('id').eq('company_name', company_name).execute()
+
+        if existing.data:
+            result = supabase.table('customer_preferences').update(db_fields).eq('company_name', company_name).execute()
+        else:
+            # Insert with defaults + overrides
+            insert_data = dict(_PREF_DEFAULTS)
+            insert_data.update(db_fields)
+            insert_data['company_name'] = company_name
+            result = supabase.table('customer_preferences').insert(insert_data).execute()
+
+        return jsonify({
+            'success': True,
+            'preferences': _prefs_db_to_api(result.data[0])
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating company preferences: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
+@app.route('/api/company-preferences/<company_name>', methods=['DELETE'])
+def delete_company_preferences(company_name):
+    """Reset company preferences to defaults (keeps the row)."""
+    try:
+        if not check_api_key():
+            return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
+
+        supabase = vectorizer.supabase
+
+        # Check if row exists
+        existing = supabase.table('customer_preferences').select('id').eq('company_name', company_name).execute()
+
+        if not existing.data:
+            return jsonify({'error': f'Preferences not found for company: {company_name}'}), 404
+
+        # Reset to defaults (preserves id and created_at)
+        result = supabase.table('customer_preferences').update(dict(_PREF_DEFAULTS)).eq('company_name', company_name).execute()
+
+        return jsonify({
+            'success': True,
+            'message': 'Preferences reset to defaults',
+            'preferences': _prefs_db_to_api(result.data[0])
+        })
+
+    except Exception as e:
+        logger.error(f"Error resetting company preferences: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
+# ============================================================================
 # RUN APP
 # ============================================================================
 
