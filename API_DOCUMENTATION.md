@@ -40,7 +40,8 @@ The API uses a **three-field embedding system** for enhanced candidate understan
 5. **`/api/emails/check`** - Check if generated emails exist for a candidate
 6. **`/api/emails`** - Retrieve stored email records for a candidate
 7. **`/api/emails/<id>/status`** - Update email status (e.g. generated → sent)
-8. **`/api/health`** - Health check
+8. **`/api/company-preferences/<company_name>`** - CRUD for company-scoped preferences (goal, feedback, do-not-contact)
+9. **`/api/health`** - Health check
 
 ### Common Workflows
 
@@ -70,6 +71,14 @@ POST /api/generate-email
 1. GET /api/emails/check?candidate_id=...  →  check if emails exist
 2. GET /api/emails?candidate_id=...        →  retrieve email records
 3. PATCH /api/emails/123/status            →  mark as sent
+```
+
+**Manage company preferences:**
+```
+GET    /api/company-preferences/kong       →  read preferences
+PUT    /api/company-preferences/kong       →  create/replace (all fields required)
+PATCH  /api/company-preferences/kong       →  partial update or upsert
+DELETE /api/company-preferences/kong       →  reset to defaults
 ```
 
 ---
@@ -541,7 +550,200 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 
 ---
 
-### 8. Health Check
+### 8. Get Company Preferences
+
+**GET** `/api/company-preferences/<company_name>`
+
+Fetch company preferences by company name, or by ID via query parameter.
+
+#### Query Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | No | Look up by row ID instead of company name |
+
+#### Request
+
+```
+GET /api/company-preferences/kong
+GET /api/company-preferences/kong?id=1
+```
+
+#### Response (Success - 200 OK)
+
+```json
+{
+  "success": true,
+  "preferences": {
+    "id": 1,
+    "companyName": "kong",
+    "goal": "warm",
+    "doNotContactReasons": ["opted-out", "competitor"],
+    "nurtureEmailFeedback": "keep it casual",
+    "jobEmailFeedback": "emphasize remote work",
+    "createdAt": "2026-03-22T17:03:12.923611+00:00"
+  }
+}
+```
+
+#### Response (404 - Not Found)
+
+```json
+{
+  "error": "Preferences not found for company: kong"
+}
+```
+
+---
+
+### 9. Create/Replace Company Preferences
+
+**PUT** `/api/company-preferences/<company_name>`
+
+Create or fully replace company preferences. All mutable fields are required. If a record already exists for the company, it is updated; otherwise a new record is inserted.
+
+#### Request
+
+**Headers:**
+```
+Content-Type: application/json
+X-API-Key: your-secret-api-key (if authentication enabled)
+```
+
+**Body:**
+```json
+{
+  "goal": "warm",
+  "doNotContactReasons": ["opted-out", "competitor"],
+  "nurtureEmailFeedback": "keep it casual",
+  "jobEmailFeedback": "emphasize remote work"
+}
+```
+
+**Fields:**
+- `goal` (required): One of `"applicants"`, `"warm"`, or `"both"`
+- `doNotContactReasons` (required): Array of strings
+- `nurtureEmailFeedback` (required): String with feedback for nurture emails
+- `jobEmailFeedback` (required): String with feedback for job-focused emails
+
+**Note:** `companyName` is taken from the URL path. `id` cannot be set by the client.
+
+#### Response (Success - 200 OK)
+
+```json
+{
+  "success": true,
+  "preferences": {
+    "id": 1,
+    "companyName": "kong",
+    "goal": "warm",
+    "doNotContactReasons": ["opted-out", "competitor"],
+    "nurtureEmailFeedback": "keep it casual",
+    "jobEmailFeedback": "emphasize remote work",
+    "createdAt": "2026-03-22T17:03:12.923611+00:00"
+  }
+}
+```
+
+#### Response (400 - Missing Fields)
+
+```json
+{
+  "error": "Missing required fields: doNotContactReasons, jobEmailFeedback, nurtureEmailFeedback"
+}
+```
+
+#### Response (400 - Invalid Goal)
+
+```json
+{
+  "error": "Invalid goal. Must be one of: applicants, both, warm"
+}
+```
+
+---
+
+### 10. Partially Update Company Preferences
+
+**PATCH** `/api/company-preferences/<company_name>`
+
+Partially update company preferences. Only provided fields are changed. If no record exists, a new one is created with defaults for omitted fields.
+
+#### Request
+
+**Headers:**
+```
+Content-Type: application/json
+X-API-Key: your-secret-api-key (if authentication enabled)
+```
+
+**Body (any subset of mutable fields):**
+```json
+{
+  "goal": "both"
+}
+```
+
+#### Response (Success - 200 OK)
+
+```json
+{
+  "success": true,
+  "preferences": {
+    "id": 1,
+    "companyName": "kong",
+    "goal": "both",
+    "doNotContactReasons": ["opted-out", "competitor"],
+    "nurtureEmailFeedback": "keep it casual",
+    "jobEmailFeedback": "emphasize remote work",
+    "createdAt": "2026-03-22T17:03:12.923611+00:00"
+  }
+}
+```
+
+---
+
+### 11. Reset Company Preferences
+
+**DELETE** `/api/company-preferences/<company_name>`
+
+Reset company preferences to defaults. The row is preserved (keeps `id` and `createdAt`), but all mutable fields are reset.
+
+**Default values after reset:**
+- `goal`: `"both"`
+- `doNotContactReasons`: `[]`
+- `nurtureEmailFeedback`: `""`
+- `jobEmailFeedback`: `""`
+
+#### Response (Success - 200 OK)
+
+```json
+{
+  "success": true,
+  "message": "Preferences reset to defaults",
+  "preferences": {
+    "id": 1,
+    "companyName": "kong",
+    "goal": "both",
+    "doNotContactReasons": [],
+    "nurtureEmailFeedback": "",
+    "jobEmailFeedback": "",
+    "createdAt": "2026-03-22T17:03:12.923611+00:00"
+  }
+}
+```
+
+#### Response (404 - Not Found)
+
+```json
+{
+  "error": "Preferences not found for company: kong"
+}
+```
+
+---
+
+### 12. Health Check
 
 **GET** `/api/health`
 
@@ -793,6 +995,34 @@ curl -X PATCH https://kong-email-creator.vercel.app/api/emails/1/status \
   -d '{"status": "sent"}'
 ```
 
+**Create/replace company preferences (PUT):**
+```bash
+curl -X PUT https://kong-email-creator.vercel.app/api/company-preferences/kong \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
+  -d '{"goal":"warm","doNotContactReasons":["opted-out"],"nurtureEmailFeedback":"casual","jobEmailFeedback":"emphasize remote"}'
+```
+
+**Get company preferences:**
+```bash
+curl "https://kong-email-creator.vercel.app/api/company-preferences/kong" \
+  -H "X-API-Key: your-secret-api-key"
+```
+
+**Partial update (PATCH):**
+```bash
+curl -X PATCH https://kong-email-creator.vercel.app/api/company-preferences/kong \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
+  -d '{"goal":"both"}'
+```
+
+**Reset preferences to defaults (DELETE):**
+```bash
+curl -X DELETE https://kong-email-creator.vercel.app/api/company-preferences/kong \
+  -H "X-API-Key: your-secret-api-key"
+```
+
 ---
 
 ## Performance
@@ -812,6 +1042,7 @@ curl -X PATCH https://kong-email-creator.vercel.app/api/emails/1/status \
 | `/api/emails/check` | <1s | Query generated_emails table |
 | `/api/emails` | <1s | Query generated_emails table |
 | `/api/emails/<id>/status` | <1s | Update generated_emails row |
+| `/api/company-preferences/<name>` | <1s | Query/update customer_preferences table |
 
 ### Processing Steps Detail
 
@@ -849,6 +1080,7 @@ curl -X PATCH https://kong-email-creator.vercel.app/api/emails/1/status \
 - **`/api/generate-email`:** ~$0.002 per request (2 LLM calls)
 - **`/api/process-and-email`:** ~$0.002 per request (2 LLM calls, same as generate-email)
 - **`/api/emails/check`**, **`/api/emails`**, **`/api/emails/<id>/status`:** ~$0 (database queries only)
+- **`/api/company-preferences/*`:** ~$0 (database queries only)
 
 ---
 
@@ -1026,6 +1258,6 @@ If you were using the old `semantic_summary` field:
 
 ---
 
-Last Updated: February 16, 2026
-API Version: 4.0 (Email Storage & Management)
+Last Updated: March 22, 2026
+API Version: 5.0 (Company Preferences)
 Documentation maintained by: Kong Email Generator Team
