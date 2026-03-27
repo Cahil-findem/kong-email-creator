@@ -518,7 +518,7 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
         return []
 
 
-def generate_email_content(candidate_info, blog_recommendations, semantic_summary, job_matches=None):
+def generate_email_content(candidate_info, blog_recommendations, semantic_summary, job_matches=None, email_feedback=None):
     """
     Internal: Generate personalized nurture email using LLM
 
@@ -527,6 +527,7 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
         blog_recommendations: List of matching blog posts
         semantic_summary: Combined candidate summaries
         job_matches: Optional list of matching job openings
+        email_feedback: Optional dict keyed by email type ('job-focused', 'relationship-nurture') with feedback strings
     """
     # Extract candidate details
     name = candidate_info.get('full_name', 'there')
@@ -778,6 +779,19 @@ CRITICAL RULES:
 - Make blog justifications PERSONAL to this specific person
 - Sound custom-written, not templated
 - Do NOT mention jobs in this approach"""
+
+    # Inject email feedback into system prompt if provided
+    email_type = 'job-focused' if use_job_focused_approach else 'relationship-nurture'
+    feedback_text = (email_feedback or {}).get(email_type, '').strip() if email_feedback else ''
+    if feedback_text:
+        system_prompt += f"""
+
+## User Email Preferences (for {email_type} emails)
+The user has specified the following preferences for how {email_type} emails should be written.
+Apply these directions to the tone, length, focus areas, and content approach:
+
+"{feedback_text}"
+"""
 
     try:
         response = openai_client.chat.completions.create(
@@ -1264,9 +1278,12 @@ def generate_email():
         logger.info("Matching candidate to open jobs...")
         job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35)
 
+        # Extract optional email feedback
+        email_feedback = data.get('email_feedback')
+
         # Generate email
         logger.info("Generating email...")
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback)
 
         # Store generated email in database
         try:
@@ -1412,7 +1429,10 @@ def process_and_email():
 
         job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35)
 
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches)
+        # Extract optional email feedback
+        email_feedback = data.get('email_feedback')
+
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback)
 
         # Store generated email
         try:
