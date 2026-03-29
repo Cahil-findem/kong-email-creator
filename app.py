@@ -786,9 +786,11 @@ CRITICAL RULES:
     if feedback_text:
         system_prompt += f"""
 
-## User Email Preferences (for {email_type} emails)
+## User Email Preferences (for {email_type} emails) — OVERRIDE
 The user has specified the following preferences for how {email_type} emails should be written.
-Apply these directions to the tone, length, focus areas, and content approach:
+These preferences TAKE PRIORITY over any conflicting instructions above (including structure,
+length, tone, paragraph count, and formatting rules). Where the user's preferences conflict
+with the base prompt, follow the user's preferences.
 
 "{feedback_text}"
 """
