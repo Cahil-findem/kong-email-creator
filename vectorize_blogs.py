@@ -123,10 +123,13 @@ class BlogVectorizer:
             logger.error(f"Error generating batch embeddings: {str(e)}")
             raise
 
-    def fetch_blog_posts(self, limit: Optional[int] = None) -> List[Dict]:
+    def fetch_blog_posts(self, limit: Optional[int] = None, company: Optional[str] = None) -> List[Dict]:
         """Fetch blog posts from Supabase"""
         try:
             query = self.supabase.table('blog_posts').select('id, url, title, content')
+
+            if company:
+                query = query.eq('company', company)
 
             if limit:
                 query = query.limit(limit)

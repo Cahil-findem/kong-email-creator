@@ -172,13 +172,17 @@ class JobPostingManager:
             logger.error(f"Error retrieving job posting: {str(e)}")
             return None
 
-    def get_active_jobs(self, limit: int = 100) -> list:
+    def get_active_jobs(self, limit: int = 100, company: Optional[str] = None) -> list:
         """Retrieve all active job postings"""
         try:
-            result = self.supabase.table('job_postings')\
+            query = self.supabase.table('job_postings')\
                 .select('*')\
-                .eq('status', 'active')\
-                .order('created_at', desc=True)\
+                .eq('status', 'active')
+
+            if company:
+                query = query.eq('company', company)
+
+            result = query.order('created_at', desc=True)\
                 .limit(limit)\
                 .execute()
 

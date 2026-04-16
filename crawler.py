@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 class NetAppBlogCrawler:
     """Crawler for NetApp blog posts"""
 
-    def __init__(self):
+    def __init__(self, company: str = 'kong'):
+        self.company = company
         self.base_url = "https://konghq.com/blog"
         # Use cloudscraper to bypass Cloudflare protection
         self.session = cloudscraper.create_scraper(
@@ -346,7 +347,8 @@ class NetAppBlogCrawler:
                 'published_date': post_data.get('published_date'),
                 'featured_image': post_data.get('featured_image'),
                 'tags': post_data.get('tags'),
-                'scraped_at': post_data.get('scraped_at')
+                'scraped_at': post_data.get('scraped_at'),
+                'company': self.company
             }
 
             # Remove None values

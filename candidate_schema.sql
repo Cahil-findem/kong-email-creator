@@ -74,11 +74,13 @@ USING hnsw (embedding vector_cosine_ops);
 -- ============================================================================
 -- Drop the old function first to allow return type change
 DROP FUNCTION IF EXISTS search_blogs_for_candidate(vector, float, int);
+DROP FUNCTION IF EXISTS search_blogs_for_candidate(vector, float, int, text);
 
 CREATE OR REPLACE FUNCTION search_blogs_for_candidate(
     candidate_embedding vector(1536),
     match_threshold float DEFAULT 0.65,
-    match_count int DEFAULT 10
+    match_count int DEFAULT 10,
+    company_filter text DEFAULT NULL
 )
 RETURNS TABLE (
     blog_post_id bigint,
@@ -106,6 +108,7 @@ BEGIN
     FROM blog_chunks bc
     JOIN blog_posts bp ON bc.blog_post_id = bp.id
     WHERE 1 - (bc.embedding <=> candidate_embedding) > match_threshold
+      AND (company_filter IS NULL OR bp.company = company_filter)
     ORDER BY bc.embedding <=> candidate_embedding
     LIMIT match_count;
 END;
@@ -118,11 +121,13 @@ $$;
 -- ============================================================================
 -- Drop the old function first to allow return type change
 DROP FUNCTION IF EXISTS search_top_blogs_for_candidate(vector, float, int);
+DROP FUNCTION IF EXISTS search_top_blogs_for_candidate(vector, float, int, text);
 
 CREATE OR REPLACE FUNCTION search_top_blogs_for_candidate(
     candidate_embedding vector(1536),
     match_threshold float DEFAULT 0.65,
-    match_count int DEFAULT 5
+    match_count int DEFAULT 5,
+    company_filter text DEFAULT NULL
 )
 RETURNS TABLE (
     blog_post_id bigint,
@@ -152,6 +157,7 @@ BEGIN
         FROM blog_chunks bc
         JOIN blog_posts bp ON bc.blog_post_id = bp.id
         WHERE 1 - (bc.embedding <=> candidate_embedding) > match_threshold
+          AND (company_filter IS NULL OR bp.company = company_filter)
     )
     SELECT
         rc.id as blog_post_id,

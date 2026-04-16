@@ -40,14 +40,30 @@ The API uses a **three-field embedding system** for enhanced candidate understan
 5. **`/api/emails/check`** - Check if generated emails exist for a candidate
 6. **`/api/emails`** - Retrieve stored email records for a candidate
 7. **`/api/emails/<id>/status`** - Update email status (e.g. generated → sent)
-8. **`/api/company-preferences/<company_name>`** - CRUD for company-scoped preferences (goal, feedback, do-not-contact)
-9. **`/api/health`** - Health check
+8. **`/api/candidate/<candidate_id>`** - Fetch candidate enrichment data (read-only)
+9. **`/api/jobs/<job_id>`** - Fetch job details (read-only)
+10. **`/api/company-preferences/<company_name>`** - CRUD for company-scoped preferences (goal, feedback, do-not-contact)
+11. **`/api/health`** - Health check
+
+### Company Scoping
+
+All endpoints that read or write multi-tenant data require a **`company`** parameter:
+- **POST endpoints**: Include `"company": "kong"` in the JSON request body
+- **GET endpoints**: Include `?company=kong` as a query parameter
+
+Omitting `company` returns **400 Bad Request**. This ensures data from different companies never mixes.
+
+**Exceptions** (no `company` needed):
+- `PATCH /api/emails/<id>/status` — scoped by primary key
+- `/api/company-preferences/<company_name>` — scoped by `company_name` in URL
+- `/api/update-context` — operates on candidate data (not company-scoped)
+- `/api/health` — no data access
 
 ### Common Workflows
 
 **Initial candidate processing:**
 ```
-POST /api/process-candidate
+POST /api/process-candidate  (body includes "company": "kong")
 ```
 
 **Smart processing (skip if already done):**
@@ -68,9 +84,9 @@ POST /api/generate-email
 
 **Track email lifecycle:**
 ```
-1. GET /api/emails/check?candidate_id=...  →  check if emails exist
-2. GET /api/emails?candidate_id=...        →  retrieve email records
-3. PATCH /api/emails/123/status            →  mark as sent
+1. GET /api/emails/check?candidate_id=...&company=kong  →  check if emails exist
+2. GET /api/emails?candidate_id=...&company=kong        →  retrieve email records
+3. PATCH /api/emails/123/status                         →  mark as sent
 ```
 
 **Manage company preferences:**
@@ -102,6 +118,7 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 **Body:**
 ```json
 {
+  "company": "kong",
   "candidate": {
     "ref": "candidate_id_123",
     "candidate": {
@@ -153,6 +170,10 @@ X-API-Key: your-secret-api-key (if authentication enabled)
   }
 }
 ```
+
+**Fields:**
+- `company` (required): Company identifier for scoping data (e.g. `"kong"`)
+- `candidate` (required): Full candidate JSON object
 
 #### Response (Success - 200 OK)
 
@@ -304,9 +325,15 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 **Body:**
 ```json
 {
+  "company": "kong",
   "candidate_id": "candidate_id_123"
 }
 ```
+
+**Fields:**
+- `company` (required): Company identifier for scoping data
+- `candidate_id` (required): The candidate's unique identifier
+- `email_feedback` (optional): Dict keyed by email type with feedback strings
 
 #### Response (Success - 200 OK)
 
@@ -395,9 +422,15 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 **Body:**
 ```json
 {
+  "company": "kong",
   "candidate_id": "candidate_id_123"
 }
 ```
+
+**Fields:**
+- `company` (required): Company identifier for scoping data
+- `candidate_id` (required): The candidate's unique identifier
+- `email_feedback` (optional): Dict keyed by email type with feedback strings
 
 #### Response (Success - 200 OK, candidate exists)
 
@@ -447,13 +480,14 @@ Check if generated emails exist for a candidate. Useful for quickly determining 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `candidate_id` | Yes | The candidate's unique identifier |
+| `company` | Yes | Company identifier for scoping data |
 | `email_type` | No | Filter by type (`job-focused` or `relationship-nurture`) |
 | `status` | No | Filter by status (`generated`, `sent`, etc.) |
 
 #### Request
 
 ```
-GET /api/emails/check?candidate_id=candidate_id_123&status=generated
+GET /api/emails/check?candidate_id=candidate_id_123&company=kong&status=generated
 ```
 
 #### Response (200 OK)
@@ -478,13 +512,14 @@ Retrieve stored email records (including HTML) for a candidate. Results are orde
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `candidate_id` | Yes | The candidate's unique identifier |
+| `company` | Yes | Company identifier for scoping data |
 | `email_type` | No | Filter by type (`job-focused` or `relationship-nurture`) |
 | `status` | No | Filter by status (`generated`, `sent`, etc.) |
 
 #### Request
 
 ```
-GET /api/emails?candidate_id=candidate_id_123
+GET /api/emails?candidate_id=candidate_id_123&company=kong
 ```
 
 #### Response (200 OK)
@@ -550,7 +585,92 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 
 ---
 
-### 8. Get Company Preferences
+### 8. Get Candidate
+
+**GET** `/api/candidate/<candidate_id>`
+
+Fetch candidate enrichment data (profile, summaries, blog matches) without generating an email. Read-only, no side effects.
+
+#### Query Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `company` | Yes | Company identifier for scoping blog matches |
+
+#### Request
+
+```
+GET /api/candidate/candidate_id_123?company=kong
+```
+
+#### Response (Success - 200 OK)
+
+```json
+{
+  "success": true,
+  "candidate": {
+    "id": "candidate_id_123",
+    "name": "John Doe",
+    "title": "Senior Software Engineer",
+    "company": "Acme Corp",
+    "location": "San Francisco, CA, USA"
+  },
+  "candidate_profile": { ... },
+  "professional_summary": "...",
+  "job_preferences": "...",
+  "interests": "...",
+  "blog_matches": [...]
+}
+```
+
+#### Response (404 - Not Found)
+
+```json
+{
+  "error": "Candidate candidate_id_123 not found in database"
+}
+```
+
+---
+
+### 9. Get Job
+
+**GET** `/api/jobs/<job_id>`
+
+Fetch full job details by job_id. Read-only, no side effects.
+
+#### Query Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `company` | Yes | Company identifier for scoping data |
+
+#### Request
+
+```
+GET /api/jobs/abc123?company=kong
+```
+
+#### Response (Success - 200 OK)
+
+```json
+{
+  "success": true,
+  "job": { ... }
+}
+```
+
+#### Response (404 - Not Found)
+
+```json
+{
+  "error": "Job abc123 not found"
+}
+```
+
+---
+
+### 10. Get Company Preferences
 
 **GET** `/api/company-preferences/<company_name>`
 
@@ -596,7 +716,7 @@ GET /api/company-preferences/kong?id=1
 
 ---
 
-### 9. Create/Replace Company Preferences
+### 11. Create/Replace Company Preferences
 
 **PUT** `/api/company-preferences/<company_name>`
 
@@ -663,7 +783,7 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 
 ---
 
-### 10. Partially Update Company Preferences
+### 12. Partially Update Company Preferences
 
 **PATCH** `/api/company-preferences/<company_name>`
 
@@ -703,7 +823,7 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 
 ---
 
-### 11. Reset Company Preferences
+### 13. Reset Company Preferences
 
 **DELETE** `/api/company-preferences/<company_name>`
 
@@ -743,7 +863,7 @@ Reset company preferences to defaults. The row is preserved (keeps `id` and `cre
 
 ---
 
-### 12. Health Check
+### 14. Health Check
 
 **GET** `/api/health`
 
@@ -801,14 +921,14 @@ All endpoints may return the following error responses:
 
 **Initial candidate processing:**
 ```typescript
-async function processCandidate(candidateData: any) {
+async function processCandidate(candidateData: any, company: string) {
   const response = await fetch('https://kong-email-creator.vercel.app/api/process-candidate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-API-Key': 'your-secret-api-key'
     },
-    body: JSON.stringify({ candidate: candidateData })
+    body: JSON.stringify({ company, candidate: candidateData })
   });
 
   if (!response.ok) {
@@ -857,7 +977,7 @@ async function updateInterestsAndRegenerate(
       'Content-Type': 'application/json',
       'X-API-Key': 'your-secret-api-key'
     },
-    body: JSON.stringify({ candidate_id: candidateId })
+    body: JSON.stringify({ company: 'kong', candidate_id: candidateId })
   });
 
   const emailData = await emailResponse.json();
@@ -873,14 +993,14 @@ async function updateInterestsAndRegenerate(
 ```python
 import requests
 
-def process_candidate(candidate_data):
+def process_candidate(candidate_data, company):
     url = "https://kong-email-creator.vercel.app/api/process-candidate"
     headers = {
         "Content-Type": "application/json",
         "X-API-Key": "your-secret-api-key"
     }
 
-    response = requests.post(url, json={"candidate": candidate_data}, headers=headers)
+    response = requests.post(url, json={"company": company, "candidate": candidate_data}, headers=headers)
     response.raise_for_status()
 
     result = response.json()
@@ -917,7 +1037,7 @@ def update_preferences_and_regenerate(candidate_id, new_preferences):
     # Step 2: Generate email
     email_response = requests.post(
         f"{base_url}/api/generate-email",
-        json={"candidate_id": candidate_id},
+        json={"company": "kong", "candidate_id": candidate_id},
         headers=headers
     )
     email_response.raise_for_status()
@@ -964,7 +1084,7 @@ curl -X POST https://kong-email-creator.vercel.app/api/update-context \
 curl -X POST https://kong-email-creator.vercel.app/api/generate-email \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-secret-api-key" \
-  -d '{"candidate_id": "candidate_id_123"}'
+  -d '{"company": "kong", "candidate_id": "candidate_id_123"}'
 ```
 
 **Smart process-and-email (skip processing if exists):**
@@ -972,18 +1092,30 @@ curl -X POST https://kong-email-creator.vercel.app/api/generate-email \
 curl -X POST https://kong-email-creator.vercel.app/api/process-and-email \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-secret-api-key" \
-  -d '{"candidate_id": "candidate_id_123"}'
+  -d '{"company": "kong", "candidate_id": "candidate_id_123"}'
 ```
 
 **Check if emails exist:**
 ```bash
-curl "https://kong-email-creator.vercel.app/api/emails/check?candidate_id=candidate_id_123&status=generated" \
+curl "https://kong-email-creator.vercel.app/api/emails/check?candidate_id=candidate_id_123&company=kong&status=generated" \
   -H "X-API-Key: your-secret-api-key"
 ```
 
 **Get email records:**
 ```bash
-curl "https://kong-email-creator.vercel.app/api/emails?candidate_id=candidate_id_123" \
+curl "https://kong-email-creator.vercel.app/api/emails?candidate_id=candidate_id_123&company=kong" \
+  -H "X-API-Key: your-secret-api-key"
+```
+
+**Get candidate data:**
+```bash
+curl "https://kong-email-creator.vercel.app/api/candidate/candidate_id_123?company=kong" \
+  -H "X-API-Key: your-secret-api-key"
+```
+
+**Get job details:**
+```bash
+curl "https://kong-email-creator.vercel.app/api/jobs/abc123?company=kong" \
   -H "X-API-Key: your-secret-api-key"
 ```
 
@@ -1258,6 +1390,6 @@ If you were using the old `semantic_summary` field:
 
 ---
 
-Last Updated: March 22, 2026
-API Version: 5.0 (Company Preferences)
+Last Updated: April 16, 2026
+API Version: 6.0 (Company Scoping)
 Documentation maintained by: Kong Email Generator Team
