@@ -28,20 +28,44 @@ The API is designed with modular endpoints for flexibility:
 1. /api/process-candidate — All-in-one convenience endpoint
 2. /api/update-context — Update candidate understanding with new info
 3. /api/generate-email — Generate email from existing candidate data
-4. /api/company-preferences/<company_name> — CRUD for company-scoped preferences
-5. /api/health — Health check
+4. /api/process-and-email — Smart endpoint (skip processing if exists)
+5. /api/emails/check — Check if generated emails exist
+6. /api/emails — Retrieve stored email records
+7. /api/emails/<id>/status — Update email status
+8. /api/candidate/<candidate_id> — Fetch candidate enrichment data (read-only)
+9. /api/jobs/<job_id> — Fetch job details (read-only)
+10. /api/company-preferences/<company_name> — CRUD for company-scoped preferences
+11. /api/health — Health check
+
+COMPANY SCOPING (NEW)
+
+All endpoints that read or write multi-tenant data require a "company" parameter:
+  • POST endpoints: include "company": "kong" in the JSON request body
+  • GET endpoints: include ?company=kong as a query parameter
+  • Omitting company returns 400 Bad Request
+
+Exceptions (no company needed):
+  • PATCH /api/emails/<id>/status — scoped by primary key
+  • /api/company-preferences/<name> — scoped by company_name in URL
+  • /api/update-context — operates on candidate data
+  • /api/health — no data access
 
 COMMON WORKFLOWS
 
 Initial candidate processing:
-→ POST /api/process-candidate
+→ POST /api/process-candidate  (body includes "company": "kong")
+
+Smart processing (skip if already done):
+→ POST /api/process-and-email  (body includes "company": "kong")
 
 Iterative refinement (after learning new info about candidate):
 → Step 1: POST /api/update-context
-→ Step 2: POST /api/generate-email
+→ Step 2: POST /api/generate-email  (body includes "company": "kong")
 
-Regenerate email (A/B testing, different tone, etc.):
-→ POST /api/generate-email
+Track email lifecycle:
+→ GET /api/emails/check?candidate_id=...&company=kong
+→ GET /api/emails?candidate_id=...&company=kong
+→ PATCH /api/emails/123/status
 
 Manage company preferences:
 → GET    /api/company-preferences/kong       — read preferences
@@ -74,6 +98,7 @@ Headers:
 
 Request Body:
 {
+  "company": "kong",
   "candidate": {
     "ref": "candidate_id_123",
     "candidate": {
@@ -124,6 +149,10 @@ Request Body:
     ]
   }
 }
+
+Fields:
+  • company (required) — Company identifier for scoping data (e.g. "kong")
+  • candidate (required) — Full candidate JSON object
 
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -241,8 +270,13 @@ Headers:
 
 Request Body:
 {
+  "company": "kong",
   "candidate_id": "candidate_id_123"
 }
+
+Fields:
+  • company (required) — Company identifier for scoping data
+  • candidate_id (required) — The candidate's unique identifier
 
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -519,7 +553,7 @@ async function processCandidate(candidateData) {
       'Content-Type': 'application/json',
       'X-API-Key': 'your-secret-api-key'
     },
-    body: JSON.stringify({ candidate: candidateData })
+    body: JSON.stringify({ candidate: candidateData, company: 'kong' })
   });
 
   if (!response.ok) {
@@ -559,7 +593,7 @@ async function updateAndRegenerate(candidateId, newContext, previousSummary) {
       'Content-Type': 'application/json',
       'X-API-Key': 'your-secret-api-key'
     },
-    body: JSON.stringify({ candidate_id: candidateId })
+    body: JSON.stringify({ candidate_id: candidateId, company: 'kong' })
   });
 
   const emailData = await emailResponse.json();
@@ -581,7 +615,7 @@ def process_candidate(candidate_data):
         "X-API-Key": "your-secret-api-key"
     }
 
-    response = requests.post(url, json={"candidate": candidate_data}, headers=headers)
+    response = requests.post(url, json={"candidate": candidate_data, "company": "kong"}, headers=headers)
     response.raise_for_status()
 
     return response.json()
@@ -612,7 +646,7 @@ def update_and_regenerate(candidate_id, new_context, previous_summary):
     # Step 2: Generate email
     email_response = requests.post(
         f"{base_url}/api/generate-email",
-        json={"candidate_id": candidate_id},
+        json={"candidate_id": candidate_id, "company": "kong"},
         headers=headers
     )
     email_response.raise_for_status()
@@ -622,6 +656,8 @@ def update_and_regenerate(candidate_id, new_context, previous_summary):
 ────────────────────────────────────────────────────────────────────────────────
 
 CURL — Initial processing
+
+Note: candidate.json must include "company": "kong" in the top-level object.
 
 curl -X POST https://kong-email-creator.vercel.app/api/process-candidate \
   -H "Content-Type: application/json" \
@@ -648,7 +684,7 @@ CURL — Generate email
 curl -X POST https://kong-email-creator.vercel.app/api/generate-email \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-secret-api-key" \
-  -d '{"candidate_id": "candidate_id_123"}'
+  -d '{"candidate_id": "candidate_id_123", "company": "kong"}'
 
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -695,6 +731,11 @@ Endpoint                   | Average Time | Timeout
 /api/process-candidate     | 5-8 seconds  | 30s
 /api/update-context        | 2-3 seconds  | 30s
 /api/generate-email        | 4-5 seconds  | 30s
+/api/process-and-email     | 5-8 seconds  | 30s
+/api/emails/check          | <1 second    | 30s
+/api/emails                | <1 second    | 30s
+/api/candidate/<id>        | 1-2 seconds  | 30s
+/api/jobs/<job_id>         | <1 second    | 30s
 /api/company-preferences/* | <1 second    | 30s
 
 PROCESSING PIPELINE
@@ -806,6 +847,6 @@ For additional support:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Last Updated: March 22, 2026
-API Version: 5.0 (Company Preferences)
+Last Updated: April 16, 2026
+API Version: 6.0 (Company Scoping)
 Documentation maintained by: Kong Email Generator Team
