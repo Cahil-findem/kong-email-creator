@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kong Personalized Nurture Generator</title>
+    <title>Personalized Nurture Generator</title>
     <style>
         * {
             margin: 0;
@@ -64,6 +64,37 @@
             font-size: 1.5rem;
             margin-bottom: 20px;
             color: #e0e0e0;
+        }
+
+        .company-select-group {
+            margin-bottom: 15px;
+        }
+
+        .company-select-group label {
+            display: block;
+            color: #999;
+            font-size: 0.9rem;
+            margin-bottom: 6px;
+        }
+
+        .company-select-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            transition: border-color 0.3s;
+        }
+
+        .company-select-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .company-select-group input::placeholder {
+            color: #666;
         }
 
         .input-section textarea {
@@ -457,7 +488,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📧 Kong Personalized Nurture Generator</h1>
+            <h1>Personalized Nurture Generator</h1>
             <p>Paste candidate JSON → Get personalized nurture email with matching blog posts</p>
         </div>
 
@@ -465,6 +496,10 @@
             <!-- Input Section -->
             <div class="card input-section">
                 <h2>1. Paste Candidate JSON</h2>
+                <div class="company-select-group">
+                    <label for="companyInput">Company</label>
+                    <input type="text" id="companyInput" placeholder="e.g. kong, jsheld, netapp">
+                </div>
                 <textarea id="candidateInput" placeholder='Paste your candidate JSON here, e.g.:
 {
     "68d193fecb73815f93cc0e45": {
@@ -556,6 +591,7 @@
     </div>
 
     <script>
+        const companyInput = document.getElementById('companyInput');
         const candidateInput = document.getElementById('candidateInput');
         const generateBtn = document.getElementById('generateBtn');
         const clearBtn = document.getElementById('clearBtn');
@@ -571,6 +607,7 @@
 
         // State management for regeneration
         let currentCandidateId = null;
+        let currentCompany = null;
         let currentSemanticSummary = null;
         let iterationCount = 0;
         let contextHistoryItems = [];
@@ -583,6 +620,7 @@
             regenerationSection.classList.remove('active');
             contextInput.value = '';
             currentCandidateId = null;
+            currentCompany = null;
             currentSemanticSummary = null;
             iterationCount = 0;
             contextHistoryItems = [];
@@ -630,13 +668,20 @@
                 loading.classList.add('active');
                 generateBtn.disabled = true;
 
+                // Capture and validate company
+                currentCompany = companyInput.value.trim().toLowerCase();
+                if (!currentCompany) {
+                    showError('Please enter a company name');
+                    return;
+                }
+
                 // Call API
                 const response = await fetch('/api/process-candidate', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ candidate })
+                    body: JSON.stringify({ candidate, company: currentCompany })
                 });
 
                 const data = await response.json();
@@ -689,18 +734,31 @@
             document.getElementById('interestsText').textContent = interests || 'Not available';
 
             // Blog matches
-            const blogMatchesHtml = blog_matches.map(blog => `
-                <div class="blog-item">
-                    <span class="relevance">${blog.relevance}% match</span>
-                    <h4>${blog.title}</h4>
-                    <a href="${blog.url}" target="_blank">${blog.url}</a>
-                </div>
-            `).join('');
-            document.getElementById('blogMatches').innerHTML = blogMatchesHtml;
+            if (blog_matches && blog_matches.length > 0) {
+                const blogMatchesHtml = blog_matches.map(blog => `
+                    <div class="blog-item">
+                        <span class="relevance">${blog.relevance}% match</span>
+                        <h4>${blog.title}</h4>
+                        <a href="${blog.url}" target="_blank">${blog.url}</a>
+                    </div>
+                `).join('');
+                document.getElementById('blogMatches').innerHTML = blogMatchesHtml;
+            } else {
+                document.getElementById('blogMatches').innerHTML = `
+                    <div style="color: #999; padding: 15px; background: #1a1a1a; border-radius: 8px; border: 1px solid #3a3a3a;">
+                        No matching blog posts found for this company. The email was generated without blog recommendations.
+                    </div>
+                `;
+            }
 
             // Email
-            document.getElementById('emailSubject').textContent = email.subject;
-            document.getElementById('emailBody').innerHTML = email.body;
+            if (email && email.subject) {
+                document.getElementById('emailSubject').textContent = email.subject;
+                document.getElementById('emailBody').innerHTML = email.body;
+            } else {
+                document.getElementById('emailSubject').textContent = 'Could not generate email';
+                document.getElementById('emailBody').innerHTML = '<p style="color: #999;">No email could be generated. This may be because no matching blog content was found for the selected company. Try a different company or add more blog posts.</p>';
+            }
 
             // Show result
             result.classList.add('active');
@@ -773,7 +831,8 @@
                     body: JSON.stringify({
                         candidate_id: currentCandidateId,
                         additional_context: additionalContext,
-                        section: 'interests'  // Update interests section by default
+                        section: 'interests',
+                        company: currentCompany
                     })
                 });
 
@@ -790,7 +849,8 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        candidate_id: currentCandidateId
+                        candidate_id: currentCandidateId,
+                        company: currentCompany
                     })
                 });
 

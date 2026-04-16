@@ -988,7 +988,8 @@ def process_candidate():
         logger.info("Finding matching blogs using three-embedding search...")
         top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
         if not top_blogs:
-            return jsonify({'error': 'No matching blog posts found.'}), 404
+            logger.warning(f"No matching blog posts found for {candidate_id} (company={company})")
+            top_blogs = []
 
         # Step 4.5: Match candidate to open jobs
         logger.info("Matching candidate to open jobs...")
@@ -1288,7 +1289,8 @@ def generate_email():
         logger.info("Finding matching blogs...")
         top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
         if not top_blogs:
-            return jsonify({'error': 'No matching blog posts found.'}), 404
+            logger.warning(f"No matching blog posts found for {candidate_id} (company={company})")
+            top_blogs = []
 
         # Match candidate to open jobs
         logger.info("Matching candidate to open jobs...")
@@ -1446,7 +1448,8 @@ def process_and_email():
 
         top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
         if not top_blogs:
-            return jsonify({'error': 'No matching blog posts found.'}), 404
+            logger.warning(f"No matching blog posts found for {candidate_id} (company={company})")
+            top_blogs = []
 
         job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=company)
 
