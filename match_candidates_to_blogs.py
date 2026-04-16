@@ -74,12 +74,13 @@ class CandidateBlogMatcher:
             logger.error(f"Error fetching candidate: {str(e)}")
             return None
 
-    def get_pinned_blogs_details(self, pinned_blog_urls: List[str]) -> List[Dict]:
+    def get_pinned_blogs_details(self, pinned_blog_urls: List[str], company: Optional[str] = None) -> List[Dict]:
         """
         Fetch full blog details for pinned blog URLs
 
         Args:
             pinned_blog_urls: List of blog URLs to fetch
+            company: Optional company filter
 
         Returns:
             List of blog post details
@@ -88,10 +89,14 @@ class CandidateBlogMatcher:
             return []
 
         try:
-            result = self.supabase.table('blog_posts')\
+            query = self.supabase.table('blog_posts')\
                 .select('id, title, url, author, published_date, featured_image')\
-                .in_('url', pinned_blog_urls)\
-                .execute()
+                .in_('url', pinned_blog_urls)
+
+            if company:
+                query = query.eq('company', company)
+
+            result = query.execute()
 
             if result.data:
                 # Format to match auto-matched blog structure
@@ -149,7 +154,8 @@ class CandidateBlogMatcher:
         candidate_id: str,
         match_threshold: float = 0.35,
         match_count: int = 5,
-        deduplicate: bool = True
+        deduplicate: bool = True,
+        company: Optional[str] = None
     ) -> List[Dict]:
         """
         Find relevant blog posts for a candidate using three-embedding search
@@ -159,6 +165,7 @@ class CandidateBlogMatcher:
             match_threshold: Minimum similarity score (0-1)
             match_count: Number of blog posts to return
             deduplicate: If True, return unique blog posts (best matching chunk per post)
+            company: Optional company filter for blog posts
 
         Returns:
             List of matching blog posts with similarity scores
@@ -192,7 +199,8 @@ class CandidateBlogMatcher:
             rpc_params = {
                 'candidate_embedding': interests_embedding,
                 'match_threshold': match_threshold,
-                'match_count': match_count
+                'match_count': match_count,
+                'company_filter': company
             }
 
             logger.info(f"Searching blogs using interests embedding")
@@ -311,7 +319,8 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
         candidate_id: str,
         match_threshold: float = 0.35,
         top_n_embeddings: int = 10,
-        final_n_llm: int = 3
+        final_n_llm: int = 3,
+        company: Optional[str] = None
     ) -> List[Dict]:
         """
         Hybrid approach: Use embeddings to get top N, then LLM to select final few
@@ -322,6 +331,7 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
             match_threshold: Minimum similarity score (0-1)
             top_n_embeddings: Number of blogs to get from embedding search
             final_n_llm: Number of blogs to select with LLM from top_n (including pinned)
+            company: Optional company filter for blog posts
 
         Returns:
             List of final selected blog posts (pinned first, then auto-matched)
@@ -339,7 +349,7 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
 
             if pinned_blog_urls:
                 logger.info(f"Found {len(pinned_blog_urls)} pinned blogs for candidate")
-                pinned_blogs = self.get_pinned_blogs_details(pinned_blog_urls)
+                pinned_blogs = self.get_pinned_blogs_details(pinned_blog_urls, company=company)
 
                 # If we have enough pinned blogs, return just those
                 if len(pinned_blogs) >= final_n_llm:
@@ -361,7 +371,8 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
                 candidate_id,
                 match_threshold=match_threshold,
                 match_count=top_n_embeddings,
-                deduplicate=True
+                deduplicate=True,
+                company=company
             )
 
             if not top_blogs:

@@ -28,8 +28,9 @@ logger = logging.getLogger(__name__)
 class SitemapBlogCrawler:
     """Crawler that uses sitemap.xml to find blog posts"""
 
-    def __init__(self, sitemap_url: str):
+    def __init__(self, sitemap_url: str, company: str = 'kong'):
         self.sitemap_url = sitemap_url
+        self.company = company
         # Use cloudscraper to bypass Cloudflare protection
         self.session = cloudscraper.create_scraper(
             browser={
@@ -266,7 +267,8 @@ class SitemapBlogCrawler:
                 'published_date': post_data.get('published_date'),
                 'featured_image': post_data.get('featured_image'),
                 'tags': post_data.get('tags'),
-                'scraped_at': post_data.get('scraped_at')
+                'scraped_at': post_data.get('scraped_at'),
+                'company': self.company
             }
 
             # Remove None values

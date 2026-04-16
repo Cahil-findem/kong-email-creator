@@ -253,7 +253,7 @@ def vectorize_candidate_summaries(candidate_data, summaries):
         return False
 
 
-def match_blogs_for_candidate_internal(candidate_id):
+def match_blogs_for_candidate_internal(candidate_id, company=None):
     """
     Internal: Find matching blogs for a candidate using hybrid approach
     Returns: list of LLM-selected blog matches (top 3)
@@ -266,7 +266,8 @@ def match_blogs_for_candidate_internal(candidate_id):
             candidate_id,
             match_threshold=0.25,
             top_n_embeddings=30,  # LLM reviews 30 candidates
-            final_n_llm=3          # LLM selects best 3
+            final_n_llm=3,         # LLM selects best 3
+            company=company
         )
 
         if not selected_blogs:
@@ -379,7 +380,7 @@ IMPORTANT: Be realistic about senior roles - strong engineering fundamentals and
         return None
 
 
-def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
+def match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=None):
     """
     Internal: Match candidate to open job postings using two-stage process:
     1. Semantic similarity search (threshold: 35%)
@@ -416,10 +417,14 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35):
 
         # Get all active jobs
         supabase = matcher.supabase
-        active_jobs = supabase.table('job_postings')\
+        query = supabase.table('job_postings')\
             .select('*')\
-            .eq('status', 'active')\
-            .execute()
+            .eq('status', 'active')
+
+        if company:
+            query = query.eq('company', company)
+
+        active_jobs = query.execute()
 
         if not active_jobs.data:
             logger.info("No active jobs found")
@@ -953,6 +958,10 @@ def process_candidate():
         if not data or 'candidate' not in data:
             return jsonify({'error': 'Invalid request. Please provide candidate JSON.'}), 400
 
+        company = data.get('company')
+        if not company:
+            return jsonify({'error': 'Missing required field: company'}), 400
+
         candidate_data = data['candidate']
         logger.info("Processing candidate request...")
 
@@ -977,13 +986,13 @@ def process_candidate():
 
         # Step 4: Match blogs using three embeddings
         logger.info("Finding matching blogs using three-embedding search...")
-        top_blogs = match_blogs_for_candidate_internal(candidate_id)
+        top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
         if not top_blogs:
             return jsonify({'error': 'No matching blog posts found.'}), 404
 
         # Step 4.5: Match candidate to open jobs
         logger.info("Matching candidate to open jobs...")
-        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35)
+        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=company)
 
         # Step 5: Generate email (use combined context)
         logger.info("Generating email...")
@@ -999,7 +1008,8 @@ def process_candidate():
                 'email_type': email_content.get('email_approach', 'unknown'),
                 'status': 'generated',
                 'email_subject': email_content.get('subject', ''),
-                'email_html': email_content.get('body', '')
+                'email_html': email_content.get('body', ''),
+                'company': company
             }
             if job_matches and email_content.get('email_approach') == 'job-focused':
                 email_record['job_matches'] = [job['job_id'] for job in job_matches]
@@ -1207,6 +1217,10 @@ def generate_email():
         if not data or 'candidate_id' not in data:
             return jsonify({'error': 'Invalid request. Provide candidate_id.'}), 400
 
+        company = data.get('company')
+        if not company:
+            return jsonify({'error': 'Missing required field: company'}), 400
+
         candidate_id = data['candidate_id']
         logger.info(f"Generating email for {candidate_id}")
 
@@ -1272,13 +1286,13 @@ def generate_email():
 
         # Match blogs
         logger.info("Finding matching blogs...")
-        top_blogs = match_blogs_for_candidate_internal(candidate_id)
+        top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
         if not top_blogs:
             return jsonify({'error': 'No matching blog posts found.'}), 404
 
         # Match candidate to open jobs
         logger.info("Matching candidate to open jobs...")
-        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35)
+        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=company)
 
         # Extract optional email feedback
         email_feedback = data.get('email_feedback')
@@ -1295,7 +1309,8 @@ def generate_email():
                 'email_type': email_content.get('email_approach', 'unknown'),
                 'status': 'generated',
                 'email_subject': email_content.get('subject', ''),
-                'email_html': email_content.get('body', '')
+                'email_html': email_content.get('body', ''),
+                'company': company
             }
             if job_matches and email_content.get('email_approach') == 'job-focused':
                 email_record['job_matches'] = [job['job_id'] for job in job_matches]
@@ -1355,6 +1370,10 @@ def process_and_email():
         data = request.json
         if not data or 'candidate_id' not in data:
             return jsonify({'error': 'Invalid request. Provide candidate_id.'}), 400
+
+        company = data.get('company')
+        if not company:
+            return jsonify({'error': 'Missing required field: company'}), 400
 
         candidate_id = data['candidate_id']
         logger.info(f"process-and-email: checking if {candidate_id} exists...")
@@ -1425,11 +1444,11 @@ def process_and_email():
         if interests:
             combined_summary += f"\n\n{interests}"
 
-        top_blogs = match_blogs_for_candidate_internal(candidate_id)
+        top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
         if not top_blogs:
             return jsonify({'error': 'No matching blog posts found.'}), 404
 
-        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35)
+        job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=company)
 
         # Extract optional email feedback
         email_feedback = data.get('email_feedback')
@@ -1443,7 +1462,8 @@ def process_and_email():
                 'email_type': email_content.get('email_approach', 'unknown'),
                 'status': 'generated',
                 'email_subject': email_content.get('subject', ''),
-                'email_html': email_content.get('body', '')
+                'email_html': email_content.get('body', ''),
+                'company': company
             }
             if job_matches and email_content.get('email_approach') == 'job-focused':
                 email_record['job_matches'] = [job['job_id'] for job in job_matches]
@@ -1507,8 +1527,12 @@ def check_emails():
         if not candidate_id:
             return jsonify({'error': 'candidate_id query parameter is required'}), 400
 
+        company = request.args.get('company')
+        if not company:
+            return jsonify({'error': 'company query parameter is required'}), 400
+
         supabase = vectorizer.supabase
-        query = supabase.table('generated_emails').select('id', count='exact').eq('candidate_id', candidate_id)
+        query = supabase.table('generated_emails').select('id', count='exact').eq('candidate_id', candidate_id).eq('company', company)
 
         email_type = request.args.get('email_type')
         if email_type:
@@ -1542,8 +1566,12 @@ def get_emails():
         if not candidate_id:
             return jsonify({'error': 'candidate_id query parameter is required'}), 400
 
+        company = request.args.get('company')
+        if not company:
+            return jsonify({'error': 'company query parameter is required'}), 400
+
         supabase = vectorizer.supabase
-        query = supabase.table('generated_emails').select('*').eq('candidate_id', candidate_id)
+        query = supabase.table('generated_emails').select('*').eq('candidate_id', candidate_id).eq('company', company)
 
         email_type = request.args.get('email_type')
         if email_type:
@@ -1605,6 +1633,10 @@ def get_candidate(candidate_id):
         if not check_api_key():
             return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
 
+        company = request.args.get('company')
+        if not company:
+            return jsonify({'error': 'company query parameter is required'}), 400
+
         # Get candidate from database
         candidate_profile = matcher.get_candidate_by_id(candidate_id)
         if not candidate_profile:
@@ -1661,7 +1693,7 @@ def get_candidate(candidate_id):
             logger.error(f"Error retrieving summaries: {str(e)}")
 
         # Match blogs — return empty array if none found
-        top_blogs = match_blogs_for_candidate_internal(candidate_id)
+        top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
         blog_matches = format_blog_response(top_blogs) if top_blogs else []
 
         return jsonify({
@@ -1686,8 +1718,12 @@ def get_job(job_id):
         if not check_api_key():
             return jsonify({'error': 'Unauthorized: Invalid API key'}), 401
 
+        company = request.args.get('company')
+        if not company:
+            return jsonify({'error': 'company query parameter is required'}), 400
+
         supabase = matcher.supabase
-        result = supabase.table('job_postings').select('*').eq('job_id', job_id).execute()
+        result = supabase.table('job_postings').select('*').eq('job_id', job_id).eq('company', company).execute()
 
         if not result.data:
             return jsonify({'error': f'Job {job_id} not found'}), 404
