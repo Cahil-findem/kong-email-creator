@@ -1,4 +1,4 @@
-KONG EMAIL GENERATOR API DOCUMENTATION
+PERSONALIZED NURTURE GENERATOR API DOCUMENTATION
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
