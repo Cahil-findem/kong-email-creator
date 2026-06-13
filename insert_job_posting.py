@@ -42,7 +42,7 @@ class JobPostingManager:
         Uses application_link or position + company hash
         """
         # Try to use application link as primary identifier
-        if 'metadata' in job_data and 'application_link' in job_data['metadata']:
+        if 'metadata' in job_data and job_data['metadata'].get('application_link'):
             link = job_data['metadata']['application_link']
             # Extract the hash from the URL
             if 'ashbyhq.com/kong/' in link:

@@ -1,4 +1,4 @@
-# Kong Email Generator API Documentation
+# Personalized Nurture Generator API Documentation
 
 ## Base URL
 
@@ -248,6 +248,21 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 - **`interests`**: Bulleted list of technologies, industries, and professional topics.
 - **`blog_matches`**: Array of relevant blog posts with titles, URLs, and relevance scores
 - **`email`**: Generated email with subject and body
+- **`job_matches`** *(optional)*: Array of matched job postings, only present when matches are found. Each entry includes:
+  - `position`: Job title
+  - `company`: Company name
+  - `about_role`: Job description
+  - `similarity`: Semantic similarity score (0-1)
+  - `llm_evaluation`: Object with `confidence` (high/medium/low), `match_score` (0-100), `reasoning`, `key_alignments`, and `concerns`
+
+**Job Matching Pipeline:**
+
+Responses from `process-candidate`, `generate-email`, and `process-and-email` may include a `job_matches` array. Job matching uses a two-stage process:
+
+1. **Stage 1 — Semantic similarity**: The candidate's professional summary embedding is compared against all active job postings for the company. Jobs scoring above 35% cosine similarity pass to Stage 2.
+2. **Stage 2 — LLM evaluation**: GPT-4o-mini evaluates each semantic match for genuine role fit (role type alignment, seniority match, transferable skills, core requirements, career logic). Only LLM-confirmed matches (max 2) are returned.
+
+When job matches are found, the email generator uses a **job-focused** approach. When no jobs match, it falls back to a **relationship-nurture** approach using blog recommendations.
 
 ---
 
@@ -326,14 +341,18 @@ X-API-Key: your-secret-api-key (if authentication enabled)
 ```json
 {
   "company": "kong",
-  "candidate_id": "candidate_id_123"
+  "candidate_id": "candidate_id_123",
+  "email_feedback": {
+    "relationship-nurture": "keep it casual and mention open source",
+    "job-focused": "emphasize remote work and growth opportunities"
+  }
 }
 ```
 
 **Fields:**
 - `company` (required): Company identifier for scoping data
 - `candidate_id` (required): The candidate's unique identifier
-- `email_feedback` (optional): Dict keyed by email type with feedback strings
+- `email_feedback` (optional): Dict keyed by email type with feedback strings. Keys are `"job-focused"` and/or `"relationship-nurture"`. The feedback for the matching email type is appended to the system prompt, overriding conflicting base instructions. This can also be set globally via company preferences (`nurtureEmailFeedback` / `jobEmailFeedback`).
 
 #### Response (Success - 200 OK)
 
@@ -1391,5 +1410,5 @@ If you were using the old `semantic_summary` field:
 ---
 
 Last Updated: April 16, 2026
-API Version: 6.0 (Company Scoping)
-Documentation maintained by: Kong Email Generator Team
+API Version: 6.1 (Job Matching Pipeline)
+Documentation maintained by: Personalized Nurture Generator Team
