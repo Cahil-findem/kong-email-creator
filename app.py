@@ -6,6 +6,7 @@ Provides a web interface to vectorize candidates and generate personalized email
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import os
+import re
 import json
 import logging
 import numpy as np
@@ -256,7 +257,7 @@ def vectorize_candidate_summaries(candidate_data, summaries):
 def match_blogs_for_candidate_internal(candidate_id, company=None):
     """
     Internal: Find matching blogs for a candidate using hybrid approach
-    Returns: list of LLM-selected blog matches (top 3)
+    Returns: list of LLM-selected blog matches (top 2)
     """
     try:
         logger.info(f"Finding blog matches for {candidate_id} using hybrid LLM approach...")
@@ -266,7 +267,7 @@ def match_blogs_for_candidate_internal(candidate_id, company=None):
             candidate_id,
             match_threshold=0.25,
             top_n_embeddings=30,  # LLM reviews 30 candidates
-            final_n_llm=3,         # LLM selects best 3
+            final_n_llm=2,         # LLM selects best 2 (total, including any pinned)
             company=company
         )
 
@@ -523,7 +524,7 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=None):
         return []
 
 
-def generate_email_content(candidate_info, blog_recommendations, semantic_summary, job_matches=None, email_feedback=None):
+def generate_email_content(candidate_info, blog_recommendations, semantic_summary, job_matches=None, email_feedback=None, company=None):
     """
     Internal: Generate personalized nurture email using LLM
 
@@ -533,6 +534,7 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
         semantic_summary: Combined candidate summaries
         job_matches: Optional list of matching job openings
         email_feedback: Optional dict keyed by email type ('job-focused', 'relationship-nurture') with feedback strings
+        company: Optional sender company name; used to append the company's stored email signature
     """
     # Extract candidate details
     name = candidate_info.get('full_name', 'there')
@@ -737,12 +739,19 @@ work/launches, tenure, prior roles, focus areas, the curated blog list with titl
 A concise, authentic career check-in that:
 - Opens with something specific and true about their work or path
 - Optionally asks one genuine, forward-looking question (omit if it would feel forced)
-- Shares 2–3 curated articles, each with a personal reason it's relevant to THEM
+- Shares 1–2 curated articles (never more than 2), each with a personal reason it's relevant to THEM
 - Ends with a light, open invitation to reconnect
 
 Length: under 200 words of prose before the blog section.
 
 ---
+
+## 0. GREETING (required, always first)
+
+Always begin the email with a greeting line addressed to the candidate by their FIRST name:
+`Hi [First Name],` (e.g. "Hi Rob,"). Use the candidate's actual first name from the provided
+data — never leave a literal placeholder like [First Name] or [candidate_name] in the output.
+This greeting is its own paragraph and must come before the opening.
 
 ## 1. OPENING (2–3 sentences)
 
@@ -802,7 +811,7 @@ If no featured image is available, use: https://via.placeholder.com/160x92/2563e
 
 ## 5. BODY PARAGRAPH FORMATTING
 
-Wrap EACH prose paragraph (opening, question, transition, closing) in:
+Wrap EACH prose paragraph (greeting, opening, question, transition, closing) in:
 `<p style="margin: 0 0 16px 0; font-size: 15px; color: #111827; line-height: 1.6;">...</p>`
 This guarantees consistent spacing across clients. Do not emit bare text outside a <p>.
 
@@ -852,10 +861,48 @@ with the base prompt, follow the user's preferences.
                 {"role": "user", "content": email_context}
             ],
             temperature=0.85,
-            max_tokens=1200
+            max_tokens=2200
         )
 
         email_body = response.choices[0].message.content.strip()
+
+        # Strip any accidental markdown code fences around the HTML
+        if email_body.startswith("```"):
+            email_body = re.sub(r'^```[a-zA-Z]*\n?', '', email_body)
+            email_body = re.sub(r'\n?```$', '', email_body).strip()
+
+        # Append the sender company's stored signature after the sign-off.
+        # Kept outside the LLM so names/links/images render exactly as provided.
+        if company:
+            try:
+                sig_result = matcher.supabase.table('customer_preferences').select(
+                    'signature_html'
+                ).eq('company_name', company).execute()
+                signature_html = (sig_result.data[0].get('signature_html') or '').strip() if sig_result.data else ''
+                if signature_html:
+                    email_body = f"""{email_body}
+<div style="margin-top: 16px;">
+{signature_html}
+</div>"""
+            except Exception as sig_err:
+                logger.warning(f"Could not load signature for company '{company}': {sig_err}")
+
+        # Constrain the email to a readable, fixed max width (600px) so it does
+        # not span the full width of wide inboxes/preview panes. Use a centered
+        # table wrapper (most email-client-safe approach).
+        email_body = f"""<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; border-collapse: collapse;">
+  <tr>
+    <td align="center" style="padding: 0;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width: 600px; max-width: 600px; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 0; text-align: left;">
+{email_body}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>"""
 
         # Generate subject line separately for better control
         if use_job_focused_approach:
@@ -1043,7 +1090,7 @@ def process_candidate():
         logger.info("Generating email...")
         # Combine all three summaries for email generation context
         combined_summary = f"{summaries['professional_summary']}\n\n{summaries['job_preferences']}\n\n{summaries['interests']}"
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, company=company)
 
         # Store generated email in database
         try:
@@ -1345,7 +1392,7 @@ def generate_email():
 
         # Generate email
         logger.info("Generating email...")
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback, company=company)
 
         # Store generated email in database
         try:
@@ -1500,7 +1547,7 @@ def process_and_email():
         # Extract optional email feedback
         email_feedback = data.get('email_feedback')
 
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback, company=company)
 
         # Store generated email
         try:
