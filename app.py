@@ -254,12 +254,63 @@ def vectorize_candidate_summaries(candidate_data, summaries):
         return False
 
 
+# Company-scoped forced blogs: when a sender company is listed here, its nurture
+# emails include EXACTLY these blogs (in order) and skip auto-matching entirely.
+# URLs must already exist in the blog_posts table for the same company.
+# Each entry may be a plain URL string, or a dict with:
+#   url:   the blog_posts URL (required)
+#   intro: optional lead-in sentence/framing for the email (overrides the default
+#          "why this is relevant to you" line for that blog only).
+COMPANY_FORCED_BLOGS = {
+    "Kong": [
+        {
+            "url": "https://www.linkedin.com/posts/kellycapitali_when-you-assemble-the-best-sales-minds-a-ugcPost-7475995635389837313-ckNw",
+            "intro": (
+                "I wanted to highlight Kong's President's Club — this year we took our top "
+                "sales performers to Vietnam. Thought you'd enjoy a look at how we recognize and "
+                "reward the team."
+            ),
+            "card_blurb": (
+                "Silverback Circle is Kong's President's Club — our top sales performers "
+                "celebrated in Vietnam this year, with Fiji on deck for next year."
+            ),
+            "image_fit": "contain",
+        },
+    ],
+}
+
+
 def match_blogs_for_candidate_internal(candidate_id, company=None):
     """
     Internal: Find matching blogs for a candidate using hybrid approach
-    Returns: list of LLM-selected blog matches (top 2)
+    Returns: list of LLM-selected blog matches (top 2), or the company's forced
+    blogs verbatim when company is configured in COMPANY_FORCED_BLOGS.
     """
     try:
+        # Company-forced override: return exactly the configured blogs, skip matching.
+        forced_entries = COMPANY_FORCED_BLOGS.get(company, []) if company else []
+        if forced_entries:
+            # Entries may be plain URL strings or {url, intro} dicts.
+            forced_urls = [e['url'] if isinstance(e, dict) else e for e in forced_entries]
+            url_to_intro = {e['url']: e['intro'] for e in forced_entries
+                            if isinstance(e, dict) and e.get('intro')}
+            url_to_blurb = {e['url']: e['card_blurb'] for e in forced_entries
+                            if isinstance(e, dict) and e.get('card_blurb')}
+            url_to_fit = {e['url']: e['image_fit'] for e in forced_entries
+                          if isinstance(e, dict) and e.get('image_fit')}
+            forced = matcher.get_pinned_blogs_details(forced_urls, company=company)
+            if forced:
+                for b in forced:
+                    if b['blog_url'] in url_to_intro:
+                        b['email_intro'] = url_to_intro[b['blog_url']]
+                    if b['blog_url'] in url_to_blurb:
+                        b['email_card_blurb'] = url_to_blurb[b['blog_url']]
+                    if b['blog_url'] in url_to_fit:
+                        b['email_image_fit'] = url_to_fit[b['blog_url']]
+                logger.info(f"Using {len(forced)} company-forced blog(s) for '{company}'; skipping auto-match")
+                return forced
+            logger.warning(f"Forced blog URLs for '{company}' not found in blog_posts; falling back to auto-match")
+
         logger.info(f"Finding blog matches for {candidate_id} using hybrid LLM approach...")
 
         # Use hybrid approach: embeddings get top 30, LLM selects best 3
@@ -524,6 +575,18 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=None):
         return []
 
 
+def _blog_source_label(url):
+    """Return a human label when a blog URL points to a social media post, else None."""
+    u = (url or '').lower()
+    if 'linkedin.com' in u:
+        return 'LinkedIn post'
+    if 'youtube.com' in u or 'youtu.be' in u:
+        return 'YouTube video'
+    if 'x.com' in u or 'twitter.com' in u:
+        return 'X post'
+    return None
+
+
 def generate_email_content(candidate_info, blog_recommendations, semantic_summary, job_matches=None, email_feedback=None, company=None):
     """
     Internal: Generate personalized nurture email using LLM
@@ -565,12 +628,26 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
     # Format blog posts for LLM
     blog_list = []
     for blog in blog_recommendations:
-        blog_list.append({
+        entry = {
             'title': blog['blog_title'],
             'url': blog['blog_url'],
             'featured_image': blog.get('blog_featured_image', 'https://via.placeholder.com/200x120/2563eb/ffffff?text=Blog'),
             'excerpt': blog.get('best_matching_chunk', '')[:200]
-        })
+        }
+        # Optional per-blog framing that overrides the default "why relevant" line.
+        if blog.get('email_intro'):
+            entry['suggested_intro'] = blog['email_intro']
+        # Source label for social posts (rendered under the card title).
+        source_label = _blog_source_label(blog['blog_url'])
+        if source_label:
+            entry['source'] = source_label
+        # Optional short blurb rendered under the card title.
+        if blog.get('email_card_blurb'):
+            entry['card_blurb'] = blog['email_card_blurb']
+        # Optional image fit override ('contain' to avoid cropping); default 'cover'.
+        if blog.get('email_image_fit'):
+            entry['image_fit'] = blog['email_image_fit']
+        blog_list.append(entry)
 
     # Job matches have already been evaluated by LLM in match_candidate_to_open_jobs()
     # No need for additional evaluation - use the matches that were already confirmed
@@ -783,11 +860,22 @@ ask ONE short, open question. Otherwise omit it entirely; a forced question is w
 E.g. "A few things I came across that felt relevant:" / "Sharing a couple of reads in case
 they're useful:" / "Thought these were worth passing along:"
 
+Match the count: for a SINGLE article do not use plural phrasing ("these", "a couple",
+"a few"). OMIT the transition line entirely when there is only one article OR when that
+article has a "suggested_intro" — in those cases the intro sentence is the lead-in and a
+separate transition would be redundant.
+
 ## 4. BLOG SECTION — use this EXACT HTML per article
 
 For each blog, write ONE specific sentence on why it's relevant to THIS person (tie it to a
 named fact, or state a concrete takeaway from the piece — not vague "this could offer
 perspective"), then the card.
+
+EXCEPTION — if a blog includes a "suggested_intro" field, use that intro as the lead-in
+sentence instead (you may lightly adapt the wording for flow, but keep its meaning and intent).
+Frame it as something you're highlighting or sharing ("I wanted to highlight…", "Thought you'd
+enjoy a look at…"), NOT as a match to their interests — do NOT write "given your interest in…"
+or "this aligns with your background" for these.
 
 ```html
 <p style="margin: 0 0 8px 0; font-size: 15px; color: #6b7280; line-height: 1.5;">[Why this matters to them — specific.]</p>
@@ -795,18 +883,28 @@ perspective"), then the card.
   <tr>
     <td width="160" style="width: 160px; vertical-align: top; padding-right: 16px;">
       <a href="[BLOG_URL]" style="text-decoration: none;">
-        <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" width="160" height="92" style="width: 160px; height: 92px; object-fit: cover; border-radius: 10px; display: block; border: 0;">
+        <img src="[FEATURED_IMAGE_URL]" alt="[BLOG_TITLE]" width="160" height="92" style="width: 160px; height: 92px; object-fit: [IMAGE_FIT]; border-radius: 10px; display: block; border: 0;">
       </a>
     </td>
     <td style="vertical-align: top;">
-      <a href="[BLOG_URL]" style="font-size: 15px; font-weight: 600; color: #101828; text-decoration: none; line-height: 1.35; display: block; margin: 0 0 6px 0;">[BLOG_TITLE]</a>
+      <a href="[BLOG_URL]" style="font-size: 15px; font-weight: 600; color: #101828; text-decoration: none; line-height: 1.35; display: block; margin: 0 0 4px 0;">[BLOG_TITLE]</a>
+      <div style="font-size: 12px; font-weight: 500; color: #6b7280; line-height: 1.4; margin: 0 0 6px 0;">[SOURCE_LABEL]</div>
+      <p style="font-size: 13px; color: #6b7280; line-height: 1.45; margin: 0;">[CARD_BLURB]</p>
     </td>
   </tr>
 </table>
 ```
 
+Conditional card lines (per blog data):
+- [SOURCE_LABEL]: include this <div> ONLY if the blog has a "source" field; use its value
+  verbatim (e.g. "LinkedIn post"). If there is no "source" field, OMIT the entire <div> line.
+- [CARD_BLURB]: include this <p> ONLY if the blog has a "card_blurb" field; use its value
+  verbatim (do not paraphrase). If there is no "card_blurb" field, OMIT the entire <p> line.
+
 Image rules (do not change): use `<table>`, never `display:flex`. Keep `width`/`height` as
 HTML attributes AND in the style. Keep `display:block` and `border:0`. Always include `alt`.
+[IMAGE_FIT]: use the blog's "image_fit" value if provided, otherwise "cover". ("contain"
+shows the entire image without cropping; "cover" fills the box and may crop.)
 If no featured image is available, use: https://via.placeholder.com/160x92/2563eb/ffffff?text=Read
 
 ## 5. BODY PARAGRAPH FORMATTING

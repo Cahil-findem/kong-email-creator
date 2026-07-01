@@ -90,7 +90,7 @@ class CandidateBlogMatcher:
 
         try:
             query = self.supabase.table('blog_posts')\
-                .select('id, title, url, author, published_date, featured_image')\
+                .select('id, title, url, author, published_date, featured_image, excerpt, content')\
                 .in_('url', pinned_blog_urls)
 
             if company:
@@ -102,6 +102,9 @@ class CandidateBlogMatcher:
                 # Format to match auto-matched blog structure
                 pinned_blogs = []
                 for blog in result.data:
+                    # Use the post's own excerpt/content so downstream email
+                    # generation can write a grounded "why relevant" line.
+                    chunk = (blog.get('excerpt') or blog.get('content') or '').strip()
                     pinned_blogs.append({
                         'blog_post_id': blog['id'],
                         'blog_title': blog['title'],
@@ -109,7 +112,7 @@ class CandidateBlogMatcher:
                         'blog_author': blog.get('author', ''),
                         'blog_published_date': blog.get('published_date', ''),
                         'blog_featured_image': blog.get('featured_image', ''),
-                        'best_matching_chunk': '[Manually pinned blog]',
+                        'best_matching_chunk': chunk or '[Manually pinned blog]',
                         'max_similarity': 1.0,  # Mark as manually selected
                         'is_pinned': True
                     })
