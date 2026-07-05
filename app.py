@@ -575,6 +575,28 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=None):
         return []
 
 
+def _wrap_bare_paragraphs(body):
+    """Guarantee consistent paragraph spacing regardless of LLM compliance.
+
+    The model is instructed to wrap each prose paragraph in a styled <p>, but it
+    sometimes emits bare text separated by blank lines instead — which email
+    clients collapse to a single space, destroying paragraph spacing. This splits
+    the body on blank lines and wraps any block that isn't already HTML.
+    """
+    para_style = "margin: 0 0 16px 0; font-size: 15px; color: #111827; line-height: 1.6;"
+    out = []
+    for block in re.split(r'\n\s*\n', body.strip()):
+        s = block.strip()
+        if not s:
+            continue
+        if s.startswith('<'):
+            out.append(s)  # already HTML (a <p>, the card <table>, etc.)
+        else:
+            text = ' '.join(line.strip() for line in s.splitlines())
+            out.append(f'<p style="{para_style}">{text}</p>')
+    return '\n'.join(out)
+
+
 def _blog_source_label(url):
     """Return a human label when a blog URL points to a social media post, else None."""
     u = (url or '').lower()
@@ -968,6 +990,9 @@ with the base prompt, follow the user's preferences.
         if email_body.startswith("```"):
             email_body = re.sub(r'^```[a-zA-Z]*\n?', '', email_body)
             email_body = re.sub(r'\n?```$', '', email_body).strip()
+
+        # Guarantee paragraph spacing even if the model emitted bare prose text.
+        email_body = _wrap_bare_paragraphs(email_body)
 
         # Append the sender company's stored signature after the sign-off.
         # Kept outside the LLM so names/links/images render exactly as provided.
