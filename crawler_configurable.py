@@ -42,6 +42,9 @@ DEFAULT_CONFIG = {
     "max_retries": 3,
     "delay": 2.0,
     "headless": True,
+    "wait_until": "networkidle",  # page.goto wait strategy; some sites never go idle
+    "scroll_count": 0,            # times to scroll the page to trigger lazy-loaded content
+    "listing_urls": None,         # optional list of listing pages (overrides single listing_url)
 }
 
 # ── Built-in site configurations ───────────────────────────────────────────
@@ -69,6 +72,34 @@ SITE_CONFIGS = {
         "article_url_contains": "/blog/",
         "article_url_excludes": [],
         "min_path_segments": 3,
+    },
+    "box": {
+        "company": "Box",
+        "base_url": "https://blog.box.com",
+        "listing_url": "https://blog.box.com/",
+        # Homepage reliably yields ~31 unique articles. Category pages
+        # (news/product/ai-research/customer-stories) hold more but are
+        # aggressively 403-rate-limited under rapid crawling, so they're kept
+        # out of the default run and topped up separately with slow pacing.
+        "listing_urls": [
+            "https://blog.box.com/",
+        ],
+        "discovery_mode": "listing",
+        # Article links live outside <article> cards too, so grab all main anchors
+        # and let article_url validation filter them (flat blog.box.com/<slug>).
+        "listing_selectors": ["main a", "article"],
+        # Box articles are flat slugs: blog.box.com/<slug> (no /blog/ prefix).
+        "article_url_contains": "blog.box.com",
+        "article_url_excludes": ["/category/", "/developer", "/author/", "/tag/", "/page/"],
+        "min_path_segments": 1,
+        "content_selectors": ["article", "main", 'div[class*="content"]', 'div[class*="post"]'],
+        # Box is bot-protected and never reaches networkidle; needs JS + scroll + retries.
+        "wait_until": "domcontentloaded",
+        "wait_for_selector": "article",
+        "scroll_count": 3,
+        "dynamic_wait_ms": 4000,
+        "max_retries": 3,
+        "delay": 10.0,  # gentle pacing to avoid re-triggering Box bot protection
     },
     "jsheld": {
         "company": "jsheld",
@@ -114,7 +145,7 @@ class ConfigurableBlogCrawler:
         for attempt in range(max_retries):
             try:
                 logger.info(f"Fetching: {url} (attempt {attempt + 1}/{max_retries})")
-                response = page.goto(url, wait_until="networkidle", timeout=60000)
+                response = page.goto(url, wait_until=self.config["wait_until"], timeout=60000)
 
                 status = response.status if response else None
                 # Accept 200 and 403 — some bot-protected sites return 403
@@ -132,6 +163,11 @@ class ConfigurableBlogCrawler:
                             page.wait_for_selector(self.config["wait_for_selector"], timeout=10000)
                         except PlaywrightTimeout:
                             logger.warning(f"Selector '{self.config['wait_for_selector']}' not found, continuing")
+
+                    # Scroll to trigger lazy-loaded listing content
+                    for _ in range(self.config["scroll_count"]):
+                        page.mouse.wheel(0, 25000)
+                        page.wait_for_timeout(1200)
 
                     content = page.content()
                     soup = BeautifulSoup(content, "lxml")
@@ -201,11 +237,19 @@ class ConfigurableBlogCrawler:
         return unique
 
     def _discover_from_listing(self, page) -> List[str]:
-        """Extract article URLs from the listing page."""
-        listing_url = self.config.get("listing_url", self.base_url)
+        """Extract article URLs from one or more listing pages."""
+        listing_urls = self.config.get("listing_urls") or [
+            self.config.get("listing_url", self.base_url)]
+        all_urls: List[str] = []
+        for listing_url in listing_urls:
+            all_urls.extend(self._discover_from_single_listing(page, listing_url))
+        return all_urls
+
+    def _discover_from_single_listing(self, page, listing_url) -> List[str]:
+        """Extract article URLs from a single listing page."""
         soup = self.fetch_page(page, listing_url)
         if not soup:
-            logger.error("Failed to fetch listing page")
+            logger.error(f"Failed to fetch listing page: {listing_url}")
             return []
 
         selectors = self.config["listing_selectors"]
