@@ -1031,15 +1031,18 @@ with the base prompt, follow the user's preferences.
         if use_job_focused_approach:
             # Job-focused subject line
             job_title = job_list[0]['position'] if job_list else 'opportunity'
+            # Sender company drives the subject examples; falls back to a neutral
+            # phrasing so a missing company never leaks another company's name.
+            sender_company = company or 'our company'
             subject_prompt = f"""Generate a direct, professional subject line for a job opportunity email to {first_name}, a {current_title} at {current_company}.
 
-The email is about a {job_title} role that matches their background.
+The email is about a {job_title} role at {sender_company} that matches their background.
 
 Style examples:
-- "{job_title} opportunity at Kong"
+- "{job_title} opportunity at {sender_company}"
 - "Thought of you for our {job_title} role"
 - "{first_name}: {job_title} role that matches your background"
-- "Great fit for you: {job_title} at Kong"
+- "Great fit for you: {job_title} at {sender_company}"
 - "{job_title} opening — thought you'd be interested"
 
 Keep it under 60 characters, no quotation marks, use title case. Be clear it's about a specific role."""
@@ -1067,7 +1070,11 @@ Keep it under 60 characters, no quotation marks, use title case."""
             max_tokens=25
         )
 
-        subject = subject_response.choices[0].message.content.strip().replace('"', '').replace("'", "").replace("[Company]", "Kong")
+        # Strip wrapping quotes the model sometimes adds, but keep internal
+        # apostrophes — blanket-removing them produced subjects like "Youre".
+        subject = subject_response.choices[0].message.content.strip()
+        subject = subject.replace('"', '').strip().strip("'").strip()
+        subject = subject.replace("[Company]", company or 'our company')
 
         logger.info(f"Generated {'job-focused' if use_job_focused_approach else 'relationship-nurture'} email for {name}")
 
