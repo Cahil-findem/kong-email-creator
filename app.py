@@ -553,7 +553,7 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=None):
                 confirmed_matches.append(job_match)
 
                 logger.info(f"    ✅ CONFIRMED by LLM (confidence: {evaluation.get('confidence')})")
-                logger.info(f"    Reasoning: {evaluation.get('reasoning', '')[:100]}")
+                logger.info(f"    Reasoning: {(evaluation.get('reasoning') or '')[:100]}")
             else:
                 reason = evaluation.get('reasoning', 'No match') if evaluation else 'Evaluation failed'
                 logger.info(f"    ❌ REJECTED by LLM: {reason[:100]}")
@@ -654,7 +654,7 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
             'title': blog['blog_title'],
             'url': blog['blog_url'],
             'featured_image': blog.get('blog_featured_image', 'https://via.placeholder.com/200x120/2563eb/ffffff?text=Blog'),
-            'excerpt': blog.get('best_matching_chunk', '')[:200]
+            'excerpt': (blog.get('best_matching_chunk') or '')[:200]
         }
         # Optional per-blog framing that overrides the default "why relevant" line.
         if blog.get('email_intro'):
@@ -682,7 +682,7 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
                 'location_type': job.get('location_type', ''),
                 'location': f"{job.get('location_city', '')}, {job.get('location_country', '')}".strip(', '),
                 'compensation': f"{job.get('compensation_currency', '')} {job.get('compensation_min', 0):,.0f} - {job.get('compensation_max', 0):,.0f}",
-                'about_role': job.get('about_role', '')[:250],
+                'about_role': (job.get('about_role') or '')[:250],
                 'application_link': job.get('application_link', ''),
                 'match_score': f"{job.get('similarity', 0) * 100:.0f}%",
                 'similarity': job.get('similarity', 0),
@@ -1031,15 +1031,18 @@ with the base prompt, follow the user's preferences.
         if use_job_focused_approach:
             # Job-focused subject line
             job_title = job_list[0]['position'] if job_list else 'opportunity'
+            # Sender company drives the subject examples; falls back to a neutral
+            # phrasing so a missing company never leaks another company's name.
+            sender_company = company or 'our company'
             subject_prompt = f"""Generate a direct, professional subject line for a job opportunity email to {first_name}, a {current_title} at {current_company}.
 
-The email is about a {job_title} role that matches their background.
+The email is about a {job_title} role at {sender_company} that matches their background.
 
 Style examples:
-- "{job_title} opportunity at Kong"
+- "{job_title} opportunity at {sender_company}"
 - "Thought of you for our {job_title} role"
 - "{first_name}: {job_title} role that matches your background"
-- "Great fit for you: {job_title} at Kong"
+- "Great fit for you: {job_title} at {sender_company}"
 - "{job_title} opening — thought you'd be interested"
 
 Keep it under 60 characters, no quotation marks, use title case. Be clear it's about a specific role."""
@@ -1067,7 +1070,11 @@ Keep it under 60 characters, no quotation marks, use title case."""
             max_tokens=25
         )
 
-        subject = subject_response.choices[0].message.content.strip().replace('"', '').replace("'", "").replace("[Company]", "Kong")
+        # Strip wrapping quotes the model sometimes adds, but keep internal
+        # apostrophes — blanket-removing them produced subjects like "Youre".
+        subject = subject_response.choices[0].message.content.strip()
+        subject = subject.replace('"', '').strip().strip("'").strip()
+        subject = subject.replace("[Company]", company or 'our company')
 
         logger.info(f"Generated {'job-focused' if use_job_focused_approach else 'relationship-nurture'} email for {name}")
 
@@ -1116,7 +1123,7 @@ def format_blog_response(blogs):
             'featured_image': blog.get('blog_featured_image', ''),
             'relevance': round(blog.get('max_similarity', 0) * 100, 1),
             'author': blog.get('blog_author', ''),
-            'excerpt': blog.get('best_matching_chunk', '')[:200] + '...'
+            'excerpt': (blog.get('best_matching_chunk') or '')[:200] + '...'
         }
         for blog in blogs
     ]

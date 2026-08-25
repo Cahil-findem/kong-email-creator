@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 from bs4 import BeautifulSoup
+import requests
 import xml.etree.ElementTree as ET
 import time
 import logging
@@ -8,7 +9,7 @@ import json
 import re
 from typing import List, Dict, Optional
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -42,6 +43,10 @@ DEFAULT_CONFIG = {
     "max_retries": 3,
     "delay": 2.0,
     "headless": True,
+    "wait_until": "networkidle",  # page.goto wait strategy; some sites never go idle
+    "scroll_count": 0,            # times to scroll the page to trigger lazy-loaded content
+    "listing_urls": None,         # optional list of listing pages (overrides single listing_url)
+    "newest_first": False,        # sort discovered URLs newest-first (needs sitemap <lastmod>)
 }
 
 # ── Built-in site configurations ───────────────────────────────────────────
@@ -70,6 +75,34 @@ SITE_CONFIGS = {
         "article_url_excludes": [],
         "min_path_segments": 3,
     },
+    "box": {
+        "company": "Box",
+        "base_url": "https://blog.box.com",
+        "listing_url": "https://blog.box.com/",
+        # Homepage reliably yields ~31 unique articles. Category pages
+        # (news/product/ai-research/customer-stories) hold more but are
+        # aggressively 403-rate-limited under rapid crawling, so they're kept
+        # out of the default run and topped up separately with slow pacing.
+        "listing_urls": [
+            "https://blog.box.com/",
+        ],
+        "discovery_mode": "listing",
+        # Article links live outside <article> cards too, so grab all main anchors
+        # and let article_url validation filter them (flat blog.box.com/<slug>).
+        "listing_selectors": ["main a", "article"],
+        # Box articles are flat slugs: blog.box.com/<slug> (no /blog/ prefix).
+        "article_url_contains": "blog.box.com",
+        "article_url_excludes": ["/category/", "/developer", "/author/", "/tag/", "/page/"],
+        "min_path_segments": 1,
+        "content_selectors": ["article", "main", 'div[class*="content"]', 'div[class*="post"]'],
+        # Box is bot-protected and never reaches networkidle; needs JS + scroll + retries.
+        "wait_until": "domcontentloaded",
+        "wait_for_selector": "article",
+        "scroll_count": 3,
+        "dynamic_wait_ms": 4000,
+        "max_retries": 3,
+        "delay": 10.0,  # gentle pacing to avoid re-triggering Box bot protection
+    },
     "jsheld": {
         "company": "jsheld",
         "base_url": "https://www.jsheld.com",
@@ -83,6 +116,30 @@ SITE_CONFIGS = {
         "min_path_segments": 3,
         "dynamic_wait_ms": 5000,
     },
+    "allstate": {
+        "company": "Allstate",
+        # allstatecorporation.com/newsroom.aspx is only a 12-item teaser feed that
+        # links out; the real articles live on this separate WordPress site.
+        "base_url": "https://www.allstatenewsroom.com",
+        "listing_url": "https://www.allstatenewsroom.com/news/",
+        "sitemap_url": "https://www.allstatenewsroom.com/post-sitemap.xml",
+        # Yoast sitemap lists every post (262 articles, 2022-01 onward), so
+        # sitemap discovery is complete and cheaper than paging the listing.
+        "discovery_mode": "sitemap",
+        # Flat WordPress permalinks: /news/<slug>/ -> 2 segments. min 2 drops the
+        # /news/ index page, which is also present in the sitemap.
+        "article_url_contains": "/news/",
+        "article_url_excludes": ["/category/", "/author/", "/tag/", "/multimedia/"],
+        "min_path_segments": 2,
+        "content_selectors": ["article", ".entry-content", 'div[class*="entry"]',
+                              'div[class*="content"]'],
+        "wait_until": "domcontentloaded",
+        "dynamic_wait_ms": 3000,
+        "delay": 10.0,  # allstatenewsroom.com robots.txt specifies Crawl-delay: 10
+        # The sitemap is ordered oldest-first and the archive is dominated by
+        # older financial releases, so default to the most recent news.
+        "newest_first": True,
+    },
 }
 
 
@@ -94,6 +151,9 @@ class ConfigurableBlogCrawler:
         self.config = {**DEFAULT_CONFIG, **site_config}
         self.company = self.config["company"]
         self.base_url = self.config["base_url"]
+        # url -> <lastmod> string, populated during sitemap discovery and used
+        # to order URLs when newest_first is set.
+        self._url_lastmod: Dict[str, str] = {}
 
         # Supabase
         supabase_url = os.getenv("SUPABASE_URL")
@@ -114,7 +174,7 @@ class ConfigurableBlogCrawler:
         for attempt in range(max_retries):
             try:
                 logger.info(f"Fetching: {url} (attempt {attempt + 1}/{max_retries})")
-                response = page.goto(url, wait_until="networkidle", timeout=60000)
+                response = page.goto(url, wait_until=self.config["wait_until"], timeout=60000)
 
                 status = response.status if response else None
                 # Accept 200 and 403 — some bot-protected sites return 403
@@ -132,6 +192,11 @@ class ConfigurableBlogCrawler:
                             page.wait_for_selector(self.config["wait_for_selector"], timeout=10000)
                         except PlaywrightTimeout:
                             logger.warning(f"Selector '{self.config['wait_for_selector']}' not found, continuing")
+
+                    # Scroll to trigger lazy-loaded listing content
+                    for _ in range(self.config["scroll_count"]):
+                        page.mouse.wheel(0, 25000)
+                        page.wait_for_timeout(1200)
 
                     content = page.content()
                     soup = BeautifulSoup(content, "lxml")
@@ -197,15 +262,32 @@ class ConfigurableBlogCrawler:
                 seen.add(u)
                 unique.append(u)
 
+        if self.config.get("newest_first"):
+            if self._url_lastmod:
+                # Missing lastmod sorts last rather than crashing the sort.
+                unique.sort(key=lambda u: self._url_lastmod.get(u, ""), reverse=True)
+                logger.info("Ordered URLs newest-first by sitemap <lastmod>")
+            else:
+                logger.warning("newest_first set but no <lastmod> data available "
+                               "(listing discovery?); leaving discovery order")
+
         logger.info(f"Total unique article URLs discovered: {len(unique)}")
         return unique
 
     def _discover_from_listing(self, page) -> List[str]:
-        """Extract article URLs from the listing page."""
-        listing_url = self.config.get("listing_url", self.base_url)
+        """Extract article URLs from one or more listing pages."""
+        listing_urls = self.config.get("listing_urls") or [
+            self.config.get("listing_url", self.base_url)]
+        all_urls: List[str] = []
+        for listing_url in listing_urls:
+            all_urls.extend(self._discover_from_single_listing(page, listing_url))
+        return all_urls
+
+    def _discover_from_single_listing(self, page, listing_url) -> List[str]:
+        """Extract article URLs from a single listing page."""
         soup = self.fetch_page(page, listing_url)
         if not soup:
-            logger.error("Failed to fetch listing page")
+            logger.error(f"Failed to fetch listing page: {listing_url}")
             return []
 
         selectors = self.config["listing_selectors"]
@@ -242,53 +324,104 @@ class ConfigurableBlogCrawler:
         return urls
 
     def _discover_from_sitemap(self, page) -> List[str]:
-        """Extract article URLs from an XML sitemap (fetched via Playwright)."""
+        """Extract article URLs from an XML sitemap.
+
+        Fetched over plain HTTP rather than through Playwright: sitemaps that
+        ship an XSL stylesheet (Yoast, and most WordPress SEO plugins) get
+        transformed into an HTML table by the browser, which destroys the raw
+        XML. Falls back to Playwright if the direct fetch is blocked.
+        """
         sitemap_url = self.config.get("sitemap_url")
         if not sitemap_url:
             logger.warning("No sitemap_url configured, skipping sitemap discovery")
             return []
 
-        logger.info(f"Fetching sitemap: {sitemap_url}")
+        raw = self._fetch_sitemap_xml(sitemap_url, page)
+        if not raw:
+            return []
+
         try:
-            response = page.goto(sitemap_url, wait_until="networkidle", timeout=60000)
+            urls = self._parse_sitemap_xml(raw, page)
+        except ET.ParseError as e:
+            logger.error(f"Error parsing sitemap XML: {e}")
+            return []
+
+        logger.info(f"Discovered {len(urls)} URLs from sitemap")
+        return urls
+
+    def _fetch_sitemap_xml(self, sitemap_url: str, page) -> Optional[str]:
+        """Return raw sitemap XML text, or None. Tries HTTP, then Playwright."""
+        logger.info(f"Fetching sitemap: {sitemap_url}")
+        headers = {"User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")}
+        try:
+            resp = requests.get(sitemap_url, headers=headers, timeout=30,
+                                allow_redirects=True)
+            if resp.status_code == 200 and "<" in resp.text:
+                return resp.text
+            logger.warning(f"Sitemap HTTP fetch returned {resp.status_code}, "
+                           "falling back to Playwright")
+        except Exception as e:
+            logger.warning(f"Sitemap HTTP fetch failed ({type(e).__name__}), "
+                           "falling back to Playwright")
+
+        # Playwright fallback (bot-protected sitemaps)
+        try:
+            response = page.goto(sitemap_url, wait_until=self.config["wait_until"],
+                                 timeout=60000)
             if not response or response.status != 200:
-                logger.error(f"Failed to fetch sitemap (status {response.status if response else 'None'})")
-                return []
+                logger.error("Failed to fetch sitemap "
+                             f"(status {response.status if response else 'None'})")
+                return None
+            text = BeautifulSoup(page.content(), "lxml").get_text()
+            for marker in ("<?xml", "<urlset", "<sitemapindex"):
+                idx = text.find(marker)
+                if idx != -1:
+                    return text[idx:]
+            logger.error("Could not locate XML content in sitemap response")
+            return None
+        except Exception as e:
+            logger.error(f"Playwright sitemap fetch failed: {e}")
+            return None
 
-            xml_text = page.content()
-            # Playwright wraps raw XML in an HTML shell; extract the text
-            inner_soup = BeautifulSoup(xml_text, "lxml")
-            raw = inner_soup.get_text()
+    def _parse_sitemap_xml(self, raw: str, page, _depth: int = 0) -> List[str]:
+        """Parse a urlset (or recurse one level into a sitemapindex)."""
+        start = min((i for i in (raw.find("<?xml"), raw.find("<urlset"),
+                                 raw.find("<sitemapindex")) if i != -1), default=-1)
+        if start == -1:
+            logger.error("Could not locate XML content in sitemap")
+            return []
+        root = ET.fromstring(raw[start:])
+        ns = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
-            # Try to parse as XML — strip any leading HTML noise
-            xml_start = raw.find("<?xml")
-            if xml_start == -1:
-                # Might not have the declaration; look for <urlset or <sitemapindex
-                xml_start = raw.find("<urlset")
-            if xml_start == -1:
-                xml_start = raw.find("<sitemapindex")
-            if xml_start == -1:
-                logger.error("Could not locate XML content in sitemap response")
-                return []
-
-            raw = raw[xml_start:]
-            root = ET.fromstring(raw)
-
-            namespace = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+        # A sitemap index points at child sitemaps; recurse one level.
+        children = root.findall(".//ns:sitemap/ns:loc", ns)
+        if children and _depth == 0:
+            logger.info(f"Sitemap index with {len(children)} child sitemaps")
             urls: List[str] = []
-            for url_elem in root.findall(".//ns:url", namespace):
-                loc = url_elem.find("ns:loc", namespace)
-                if loc is not None and loc.text:
-                    url = loc.text.strip()
-                    if self._is_valid_article_url(url):
-                        urls.append(url)
-
-            logger.info(f"Discovered {len(urls)} URLs from sitemap")
+            for child in children:
+                if not child.text:
+                    continue
+                child_raw = self._fetch_sitemap_xml(child.text.strip(), page)
+                if child_raw:
+                    urls.extend(self._parse_sitemap_xml(child_raw, page, _depth + 1))
             return urls
 
-        except Exception as e:
-            logger.error(f"Error parsing sitemap: {e}")
-            return []
+        urls = []
+        for url_elem in root.findall(".//ns:url", ns):
+            loc = url_elem.find("ns:loc", ns)
+            if loc is None or not loc.text:
+                continue
+            url = loc.text.strip()
+            if not self._is_valid_article_url(url):
+                continue
+            lastmod = url_elem.find("ns:lastmod", ns)
+            if lastmod is not None and lastmod.text:
+                self._url_lastmod[url] = lastmod.text.strip()
+            urls.append(url)
+        return urls
+
 
     # ── URL validation ─────────────────────────────────────────────────────
 
@@ -366,6 +499,12 @@ class ConfigurableBlogCrawler:
                         post_data["published_date"] = date_elem["content"]
                     else:
                         post_data["published_date"] = date_elem.get_text(strip=True)
+                    # Normalize ISO 8601 timestamps to plain YYYY-MM-DD to match
+                    # the format other sites store. Guarded so human-readable
+                    # dates (e.g. "April 14, 2026") pass through untouched.
+                    pd = post_data.get("published_date") or ""
+                    if re.match(r"^\d{4}-\d{2}-\d{2}T", pd):
+                        post_data["published_date"] = pd[:10]
                     break
 
             # Author
@@ -432,6 +571,13 @@ class ConfigurableBlogCrawler:
 
         if featured_image:
             featured_image = self._make_absolute_url(featured_image)
+            # Many sites advertise og:image over http even though https serves the
+            # same asset. Email clients block or proxy insecure images, so the card
+            # renders blank — upgrade the scheme for same-host images.
+            if featured_image.startswith("http://"):
+                https_url = "https://" + featured_image[len("http://"):]
+                if urlparse(https_url).netloc == urlparse(self.base_url).netloc:
+                    featured_image = https_url
 
         return featured_image
 
@@ -589,6 +735,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--no-headless", action="store_true",
         help="Run browser in visible (non-headless) mode"
     )
+    parser.add_argument(
+        "--newest-first", action="store_true",
+        help="Crawl newest articles first (uses sitemap <lastmod>); pair with "
+             "--max-posts N to grab the N most recent"
+    )
     return parser
 
 
@@ -617,6 +768,8 @@ def main():
         site_config["delay"] = args.delay
     if args.no_headless:
         site_config["headless"] = False
+    if args.newest_first:
+        site_config["newest_first"] = True
 
     crawler = ConfigurableBlogCrawler(site_config)
     crawler.crawl(max_posts=args.max_posts, dry_run=args.dry_run)

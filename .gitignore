@@ -15,6 +15,7 @@ candidate_matching.log
 # Test data with sensitive candidate information
 test_candidate.json
 two_new_candidates.json
+allstate_candidates.json
 
 # Virtual environment
 venv/
