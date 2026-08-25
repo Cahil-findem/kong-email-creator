@@ -553,7 +553,7 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=None):
                 confirmed_matches.append(job_match)
 
                 logger.info(f"    ✅ CONFIRMED by LLM (confidence: {evaluation.get('confidence')})")
-                logger.info(f"    Reasoning: {evaluation.get('reasoning', '')[:100]}")
+                logger.info(f"    Reasoning: {(evaluation.get('reasoning') or '')[:100]}")
             else:
                 reason = evaluation.get('reasoning', 'No match') if evaluation else 'Evaluation failed'
                 logger.info(f"    ❌ REJECTED by LLM: {reason[:100]}")
@@ -654,7 +654,7 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
             'title': blog['blog_title'],
             'url': blog['blog_url'],
             'featured_image': blog.get('blog_featured_image', 'https://via.placeholder.com/200x120/2563eb/ffffff?text=Blog'),
-            'excerpt': blog.get('best_matching_chunk', '')[:200]
+            'excerpt': (blog.get('best_matching_chunk') or '')[:200]
         }
         # Optional per-blog framing that overrides the default "why relevant" line.
         if blog.get('email_intro'):
@@ -682,7 +682,7 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
                 'location_type': job.get('location_type', ''),
                 'location': f"{job.get('location_city', '')}, {job.get('location_country', '')}".strip(', '),
                 'compensation': f"{job.get('compensation_currency', '')} {job.get('compensation_min', 0):,.0f} - {job.get('compensation_max', 0):,.0f}",
-                'about_role': job.get('about_role', '')[:250],
+                'about_role': (job.get('about_role') or '')[:250],
                 'application_link': job.get('application_link', ''),
                 'match_score': f"{job.get('similarity', 0) * 100:.0f}%",
                 'similarity': job.get('similarity', 0),
@@ -1123,7 +1123,7 @@ def format_blog_response(blogs):
             'featured_image': blog.get('blog_featured_image', ''),
             'relevance': round(blog.get('max_similarity', 0) * 100, 1),
             'author': blog.get('blog_author', ''),
-            'excerpt': blog.get('best_matching_chunk', '')[:200] + '...'
+            'excerpt': (blog.get('best_matching_chunk') or '')[:200] + '...'
         }
         for blog in blogs
     ]

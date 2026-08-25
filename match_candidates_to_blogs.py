@@ -249,7 +249,7 @@ class CandidateBlogMatcher:
    Author: {blog.get('blog_author', 'Unknown')}
    Published: {blog.get('blog_published_date', 'Unknown date')}
    Similarity Score: {round(blog.get('max_similarity', 0) * 100, 1)}%
-   Excerpt: {blog.get('best_matching_chunk', 'No excerpt')[:200]}..."""
+   Excerpt: {(blog.get('best_matching_chunk') or 'No excerpt')[:200]}..."""
                 blog_summaries.append(summary)
 
             blogs_text = '\n\n'.join(blog_summaries)
@@ -258,8 +258,8 @@ class CandidateBlogMatcher:
             candidate_context = f"""Candidate Profile:
 - Name: {candidate.get('full_name', 'Unknown')}
 - Current Title: {candidate.get('current_title', 'Unknown')}
-- Professional Interests: {candidate.get('interests', 'Not specified')}
-- About: {candidate.get('about_me', 'No information available')[:300]}"""
+- Professional Interests: {candidate.get('interests') or 'Not specified'}
+- About: {(candidate.get('about_me') or 'No information available')[:300]}"""
 
             selection_prompt = f"""You are helping select the most relevant blog posts for a recruiting nurture email campaign.
 
@@ -455,7 +455,7 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
                         'author': blog.get('blog_author', ''),
                         'published_date': blog.get('blog_published_date', ''),
                         'relevance_score': round(blog.get('max_similarity', 0) * 100, 1),
-                        'excerpt': blog.get('best_matching_chunk', '')[:200] + '...'
+                        'excerpt': (blog.get('best_matching_chunk') or '')[:200] + '...'
                     }
                     for blog in blogs
                 ],
@@ -513,7 +513,7 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
                         'author': blog.get('blog_author', ''),
                         'published_date': blog.get('blog_published_date', ''),
                         'relevance_score': round(blog.get('max_similarity', 0) * 100, 1),
-                        'excerpt': blog.get('best_matching_chunk', '')[:200] + '...'
+                        'excerpt': (blog.get('best_matching_chunk') or '')[:200] + '...'
                     }
                     for blog in blogs
                 ]
