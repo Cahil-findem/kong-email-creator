@@ -116,6 +116,30 @@ SITE_CONFIGS = {
         "min_path_segments": 3,
         "dynamic_wait_ms": 5000,
     },
+    "allstate": {
+        "company": "Allstate",
+        # allstatecorporation.com/newsroom.aspx is only a 12-item teaser feed that
+        # links out; the real articles live on this separate WordPress site.
+        "base_url": "https://www.allstatenewsroom.com",
+        "listing_url": "https://www.allstatenewsroom.com/news/",
+        "sitemap_url": "https://www.allstatenewsroom.com/post-sitemap.xml",
+        # Yoast sitemap lists every post (262 articles, 2022-01 onward), so
+        # sitemap discovery is complete and cheaper than paging the listing.
+        "discovery_mode": "sitemap",
+        # Flat WordPress permalinks: /news/<slug>/ -> 2 segments. min 2 drops the
+        # /news/ index page, which is also present in the sitemap.
+        "article_url_contains": "/news/",
+        "article_url_excludes": ["/category/", "/author/", "/tag/", "/multimedia/"],
+        "min_path_segments": 2,
+        "content_selectors": ["article", ".entry-content", 'div[class*="entry"]',
+                              'div[class*="content"]'],
+        "wait_until": "domcontentloaded",
+        "dynamic_wait_ms": 3000,
+        "delay": 10.0,  # allstatenewsroom.com robots.txt specifies Crawl-delay: 10
+        # The sitemap is ordered oldest-first and the archive is dominated by
+        # older financial releases, so default to the most recent news.
+        "newest_first": True,
+    },
 }
 
 
