@@ -280,6 +280,130 @@ COMPANY_FORCED_BLOGS = {
 }
 
 
+# ── Company campaigns ──────────────────────────────────────────────────────
+# A campaign is client-authored source content that steers generation: the model
+# rewrites it per candidate rather than rendering it verbatim. Facts that must
+# not drift (stats, the CTA link, the image) are pinned outside the model.
+
+CAMPAIGN_CARD_TOKEN = "{{CAMPAIGN_CARD}}"
+
+
+def get_company_campaign(company, campaign_key):
+    """Look up one campaign from customer_preferences.campaigns.
+
+    Returns the campaign dict, or None if the company, column, or key is absent.
+    """
+    if not company or not campaign_key:
+        return None
+    try:
+        result = matcher.supabase.table('customer_preferences').select(
+            'campaigns'
+        ).eq('company_name', company).execute()
+    except Exception as e:
+        logger.warning(f"Could not load campaigns for '{company}': {e}")
+        return None
+    if not result.data:
+        return None
+    campaigns = result.data[0].get('campaigns') or []
+    if isinstance(campaigns, str):
+        try:
+            campaigns = json.loads(campaigns)
+        except json.JSONDecodeError:
+            return None
+    for c in campaigns:
+        if c.get('key') == campaign_key:
+            if c.get('is_active') is False:
+                logger.warning(f"Campaign '{campaign_key}' for '{company}' is inactive")
+                return None
+            return c
+    return None
+
+
+def _build_campaign_card(campaign):
+    """Render the campaign image + CTA in code.
+
+    Kept out of the LLM for the same reason as the signature: the image URL and
+    CTA href must render exactly as configured, never paraphrased or invented.
+    """
+    image_url = (campaign.get('image_url') or '').strip()
+    cta_label = (campaign.get('cta_label') or '').strip()
+    cta_url = (campaign.get('cta_url') or '').strip()
+    alt = (campaign.get('image_alt') or campaign.get('name') or '').strip()
+    if not image_url and not cta_url:
+        return ''
+
+    parts = ['<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+             'border="0" style="width:100%; border-collapse:collapse; margin:8px 0 20px 0;">']
+    if image_url:
+        img = (f'<img src="{image_url}" alt="{alt}" width="600" '
+               'style="display:block; width:100%; max-width:600px; height:auto; '
+               'border-radius:8px; border:0; outline:none; text-decoration:none;" />')
+        if cta_url:
+            img = f'<a href="{cta_url}" style="text-decoration:none;">{img}</a>'
+        parts.append(f'  <tr><td style="padding:0;">{img}</td></tr>')
+    if cta_url and cta_label:
+        parts.append(
+            '  <tr><td style="padding:14px 0 0 0;">'
+            f'<a href="{cta_url}" style="font-size:15px; color:#2563eb; '
+            f'text-decoration:underline;">{cta_label}</a>'
+            '</td></tr>')
+    parts.append('</table>')
+    return "\n".join(parts)
+
+
+def _campaign_prompt_block(campaign):
+    """The campaign section injected into the email system prompt."""
+    facts = campaign.get('key_facts') or []
+    facts_block = "\n".join(f"- {f}" for f in facts) if facts else "(none)"
+    tone = (campaign.get('tone_notes') or '').strip()
+    cta_label = (campaign.get('cta_label') or '').strip()
+    return f"""
+
+---
+
+## CAMPAIGN CONTENT (authoritative)
+
+You are writing this email from client-supplied source material. Rewrite it so it
+reads naturally for THIS candidate -- vary the phrasing, adjust emphasis to their
+background -- but the substance, claims, and offer must stay exactly as given.
+
+SOURCE CONTENT:
+\"\"\"
+{(campaign.get('source_content') or '').strip()}
+\"\"\"
+
+MUST APPEAR VERBATIM (copy these exactly; never round, reword, or drop them):
+{facts_block}
+
+{f"TONE: {tone}" if tone else ""}
+
+RULES:
+- Do NOT invent statistics, customers, benefits, or claims beyond the source content.
+- Do NOT emit any image tag, blog card, or link yourself. Instead place the literal
+  token {CAMPAIGN_CARD_TOKEN} on its own line where the image belongs (usually after
+  the opening paragraphs). It is replaced with the real image and call-to-action.
+- Do NOT write your own call-to-action link{f' (the CTA "{cta_label}" is added for you)' if cta_label else ''}.
+- Keep the greeting and sign-off conventions described above.
+"""
+
+
+def _missing_key_facts(email_body, campaign):
+    """Return key facts absent from the generated body.
+
+    LLM rewriting can silently round '49%' to 'nearly half' or drop a figure, which
+    would publish inaccurate claims about a real company, so generation is checked
+    rather than trusted.
+    """
+    missing = []
+    haystack = re.sub(r'<[^>]+>', ' ', email_body or '')
+    haystack = re.sub(r'\s+', ' ', haystack)
+    for fact in (campaign.get('key_facts') or []):
+        needle = re.sub(r'\s+', ' ', str(fact)).strip()
+        if needle and needle.lower() not in haystack.lower():
+            missing.append(fact)
+    return missing
+
+
 def match_blogs_for_candidate_internal(candidate_id, company=None):
     """
     Internal: Find matching blogs for a candidate using hybrid approach
@@ -609,7 +733,7 @@ def _blog_source_label(url):
     return None
 
 
-def generate_email_content(candidate_info, blog_recommendations, semantic_summary, job_matches=None, email_feedback=None, company=None):
+def generate_email_content(candidate_info, blog_recommendations, semantic_summary, job_matches=None, email_feedback=None, company=None, campaign=None):
     """
     Internal: Generate personalized nurture email using LLM
 
@@ -692,6 +816,13 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
     # Decide which email approach to use
     # If jobs were confirmed by the matching LLM, use job-focused approach
     use_job_focused_approach = len(job_list) > 0
+
+    # A campaign supplies its own content and its own card, so it takes over the
+    # body entirely: no blog cards, and the nurture voice unless it says otherwise.
+    if campaign:
+        blog_list = []
+        if (campaign.get('email_type') or 'nurture') != 'job':
+            use_job_focused_approach = False
 
     # Build context for email generation (using clearer variable names)
     email_context = f"""Candidate Name: {name}
@@ -973,6 +1104,9 @@ with the base prompt, follow the user's preferences.
 "{feedback_text}"
 """
 
+    if campaign:
+        system_prompt = system_prompt + _campaign_prompt_block(campaign)
+
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -993,6 +1127,35 @@ with the base prompt, follow the user's preferences.
 
         # Guarantee paragraph spacing even if the model emitted bare prose text.
         email_body = _wrap_bare_paragraphs(email_body)
+
+        if campaign:
+            missing = _missing_key_facts(email_body, campaign)
+            if missing:
+                logger.warning(
+                    f"Campaign '{campaign.get('key')}': {len(missing)} key fact(s) "
+                    f"missing from generated body: {missing}")
+
+            # Swap the token for the real card. _wrap_bare_paragraphs may have
+            # wrapped the token in a <p>, so match it with or without that wrapper.
+            card_html = _build_campaign_card(campaign)
+            token = re.escape(CAMPAIGN_CARD_TOKEN)
+            pattern = rf'(?:<p[^>]*>\s*{token}\s*</p>|{token})'
+            if re.search(pattern, email_body):
+                email_body = re.sub(pattern, lambda _m: card_html, email_body, count=1)
+                # Drop any stray extra tokens the model emitted.
+                email_body = re.sub(pattern, '', email_body)
+            elif card_html:
+                # Model omitted the token; place the card before the sign-off if we
+                # can find one, else append it.
+                signoff = re.search(r'<p[^>]*>\s*(Best|Thanks|Cheers|Warmly)\b',
+                                    email_body, re.IGNORECASE)
+                if signoff:
+                    email_body = (email_body[:signoff.start()] + card_html + "\n"
+                                  + email_body[signoff.start():])
+                else:
+                    email_body = email_body + "\n" + card_html
+                logger.info(f"Campaign '{campaign.get('key')}': card token missing, "
+                            "inserted card automatically")
 
         # Append the sender company's stored signature after the sign-off.
         # Kept outside the LLM so names/links/images render exactly as provided.
@@ -1027,22 +1190,22 @@ with the base prompt, follow the user's preferences.
   </tr>
 </table>"""
 
-        # Generate subject line separately for better control
+        # Generate subject line separately for better control.
+        # Falls back to neutral phrasing so a missing company never leaks another
+        # company's name into the subject.
+        sender_company_label = company or 'our company'
         if use_job_focused_approach:
             # Job-focused subject line
             job_title = job_list[0]['position'] if job_list else 'opportunity'
-            # Sender company drives the subject examples; falls back to a neutral
-            # phrasing so a missing company never leaks another company's name.
-            sender_company = company or 'our company'
             subject_prompt = f"""Generate a direct, professional subject line for a job opportunity email to {first_name}, a {current_title} at {current_company}.
 
-The email is about a {job_title} role at {sender_company} that matches their background.
+The email is about a {job_title} role at {sender_company_label} that matches their background.
 
 Style examples:
-- "{job_title} opportunity at {sender_company}"
+- "{job_title} opportunity at {sender_company_label}"
 - "Thought of you for our {job_title} role"
 - "{first_name}: {job_title} role that matches your background"
-- "Great fit for you: {job_title} at {sender_company}"
+- "Great fit for you: {job_title} at {sender_company_label}"
 - "{job_title} opening — thought you'd be interested"
 
 Keep it under 60 characters, no quotation marks, use title case. Be clear it's about a specific role."""
@@ -1060,6 +1223,17 @@ Style examples:
 - "{first_name}, wanted to reach out"
 
 Keep it under 60 characters, no quotation marks, use title case."""
+
+        # A campaign's own subject lines replace the generic style examples.
+        if campaign and (campaign.get('subject_examples') or []):
+            examples = "\n".join(f'- "{x}"' for x in campaign['subject_examples'])
+            subject_prompt = f"""Generate a subject line for an email to {first_name}, a {current_title} at {current_company}.
+
+The email is a {sender_company_label} campaign. Match the voice of these client-written
+subject lines, and feel free to use one of them as-is when it already fits:
+{examples}
+
+Keep it under 60 characters, no quotation marks. Preserve any emoji style shown above."""
 
         subject_response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -1506,12 +1680,27 @@ def generate_email():
         if interests:
             combined_summary += f"\n\n{interests}"
 
-        # Match blogs
-        logger.info("Finding matching blogs...")
-        top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
-        if not top_blogs:
-            logger.warning(f"No matching blog posts found for {candidate_id} (company={company})")
-            top_blogs = []
+        # Optional client-authored campaign. Resolved before blog matching because
+        # a campaign supplies its own content and card, making the blog match (an
+        # embedding search plus an LLM selection call) wasted work.
+        campaign_key = data.get('campaign_key')
+        campaign = None
+        if campaign_key:
+            campaign = get_company_campaign(company, campaign_key)
+            if not campaign:
+                return jsonify({
+                    'error': f"Campaign '{campaign_key}' not found or inactive for company '{company}'"
+                }), 404
+            logger.info(f"Using campaign '{campaign_key}' for {company}")
+
+        # Match blogs (skipped when a campaign provides the content)
+        top_blogs = []
+        if not campaign:
+            logger.info("Finding matching blogs...")
+            top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
+            if not top_blogs:
+                logger.warning(f"No matching blog posts found for {candidate_id} (company={company})")
+                top_blogs = []
 
         # Match candidate to open jobs
         logger.info("Matching candidate to open jobs...")
@@ -1522,7 +1711,7 @@ def generate_email():
 
         # Generate email
         logger.info("Generating email...")
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback, company=company)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback, company=company, campaign=campaign)
 
         # Store generated email in database
         try:
@@ -1667,17 +1856,29 @@ def process_and_email():
         if interests:
             combined_summary += f"\n\n{interests}"
 
-        top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
-        if not top_blogs:
-            logger.warning(f"No matching blog posts found for {candidate_id} (company={company})")
-            top_blogs = []
+        campaign_key = data.get('campaign_key')
+        campaign = None
+        if campaign_key:
+            campaign = get_company_campaign(company, campaign_key)
+            if not campaign:
+                return jsonify({
+                    'error': f"Campaign '{campaign_key}' not found or inactive for company '{company}'"
+                }), 404
+            logger.info(f"Using campaign '{campaign_key}' for {company}")
+
+        top_blogs = []
+        if not campaign:
+            top_blogs = match_blogs_for_candidate_internal(candidate_id, company=company)
+            if not top_blogs:
+                logger.warning(f"No matching blog posts found for {candidate_id} (company={company})")
+                top_blogs = []
 
         job_matches = match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=company)
 
         # Extract optional email feedback
         email_feedback = data.get('email_feedback')
 
-        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback, company=company)
+        email_content = generate_email_content(candidate_info, top_blogs, combined_summary, job_matches=job_matches, email_feedback=email_feedback, company=company, campaign=campaign)
 
         # Store generated email
         try:
@@ -1972,6 +2173,8 @@ _PREF_API_TO_DB = {
     'doNotContactReasons': 'do_not_contact_reasons',
     'nurtureEmailFeedback': 'nurture_email_feedback',
     'jobEmailFeedback': 'job_email_feedback',
+    'signatureHtml': 'signature_html',
+    'campaigns': 'campaigns',
 }
 
 _PREF_DB_TO_API = {v: k for k, v in _PREF_API_TO_DB.items()}
@@ -1985,6 +2188,8 @@ _PREF_DEFAULTS = {
     'do_not_contact_reasons': [],
     'nurture_email_feedback': '',
     'job_email_feedback': '',
+    'signature_html': '',
+    'campaigns': [],
 }
 
 VALID_GOALS = {'applicants', 'warm', 'both'}
@@ -1999,6 +2204,10 @@ def _prefs_db_to_api(row):
         'doNotContactReasons': row['do_not_contact_reasons'],
         'nurtureEmailFeedback': row['nurture_email_feedback'],
         'jobEmailFeedback': row['job_email_feedback'],
+        # Both were stored but never returned, so callers could not read back
+        # what they had written.
+        'signatureHtml': row.get('signature_html') or '',
+        'campaigns': row.get('campaigns') or [],
         'createdAt': row['created_at'],
     }
 
