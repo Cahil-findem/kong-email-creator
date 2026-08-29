@@ -361,7 +361,34 @@ def _campaign_prompt_block(campaign):
 
 ---
 
-## CAMPAIGN CONTENT (authoritative)
+## CAMPAIGN MODE — THIS SECTION OVERRIDES THE RULES ABOVE
+
+This email is a client campaign. Where anything above conflicts with this section,
+this section wins. Specifically, and overriding the objective/structure above:
+
+- There are NO curated articles or blog posts in this email. Do not reference,
+  summarise, or promise any.
+- The word limit above does not apply. Cover the source content properly;
+  roughly 120-220 words of prose is right.
+- The body of this email IS the source content below, rewritten for this
+  candidate. Do not replace it with a generic check-in. An email that opens with
+  a line about the candidate and then closes without conveying the source
+  content is a FAILURE.
+
+Structure: greeting, one or two sentences connecting to the candidate, then the
+campaign content, then the sign-off.
+
+FORMATTING (overrides the formatting rules above):
+- Emoji: keep the source content's emoji, in the same places. Any "no emojis"
+  rule above does not apply to campaigns -- the client wrote them deliberately.
+- Lists: when the source presents items as a list, render each item as its own
+  line, never run together inside one paragraph. Emit them as consecutive
+  paragraph tags with no blank line between them, like:
+  <p style="margin: 0 0 8px 0; font-size: 15px; color: #111827; line-height: 1.6;">🎯 49% of reps are over 100% attainment</p>
+  <p style="margin: 0 0 8px 0; font-size: 15px; color: #111827; line-height: 1.6;">🚀 Ramped reps average 117% attainment</p>
+  Keep the leading emoji on each line if the source has one.
+  Never put a list item on the same line as the sentence introducing it --
+  the lead-in sentence ends, then each item starts its own line.
 
 You are writing this email from client-supplied source material. Rewrite it so it
 reads naturally for THIS candidate -- vary the phrasing, adjust emphasis to their
@@ -385,6 +412,40 @@ RULES:
 - Do NOT write your own call-to-action link{f' (the CTA "{cta_label}" is added for you)' if cta_label else ''}.
 - Keep the greeting and sign-off conventions described above.
 """
+
+
+def _select_campaign_subject(subjects, first_name, current_title, current_company):
+    """Pick one of the client's subject lines and return it unchanged.
+
+    The client wrote and approved these, so the model chooses between them rather
+    than writing its own -- left to generate freely it paraphrases them into
+    something the client never signed off on.
+    """
+    subjects = [s for s in subjects if (s or '').strip()]
+    if not subjects:
+        return None
+    if len(subjects) == 1:
+        return subjects[0]
+    numbered = "\n".join(f"{i+1}. {s}" for i, s in enumerate(subjects))
+    try:
+        resp = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": (
+                f"A recruiter is emailing {first_name}, a {current_title} at "
+                f"{current_company}. Which ONE of these subject lines fits them best?\n\n"
+                f"{numbered}\n\nReply with the number only."
+            )}],
+            temperature=0.7,
+            max_tokens=5,
+        )
+        choice = re.search(r'\d+', resp.choices[0].message.content or '')
+        if choice:
+            idx = int(choice.group()) - 1
+            if 0 <= idx < len(subjects):
+                return subjects[idx]
+    except Exception as e:
+        logger.warning(f"Campaign subject selection failed ({e}); using the first line")
+    return subjects[0]
 
 
 def _missing_key_facts(email_body, campaign):
@@ -699,6 +760,19 @@ def match_candidate_to_jobs(candidate_id, match_threshold=0.35, company=None):
         return []
 
 
+# A line that opens with a bullet glyph, a dash, a number, or a leading emoji is
+# treated as a list item and kept on its own line.
+_EMOJI_CLASS = (r'[\U0001F300-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF'
+                r'\U0001F1E6-\U0001F1FF]')
+# A colon followed by a leading-emoji list item, mid-line.
+_LEADIN_ITEM = re.compile(r':\s+(?=' + _EMOJI_CLASS + r'+\s)')
+
+_IS_LIST_LINE = re.compile(
+    r'^(?:[\u2022\u2023\u25E6\u2043\u2219*]|[-\u2013\u2014]\s|\d+[.)]\s'
+    r'|[\U0001F300-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\U0001F1E6-\U0001F1FF]+\s)'
+)
+
+
 def _wrap_bare_paragraphs(body):
     """Guarantee consistent paragraph spacing regardless of LLM compliance.
 
@@ -708,6 +782,7 @@ def _wrap_bare_paragraphs(body):
     the body on blank lines and wraps any block that isn't already HTML.
     """
     para_style = "margin: 0 0 16px 0; font-size: 15px; color: #111827; line-height: 1.6;"
+    item_style = "margin: 0 0 8px 0; font-size: 15px; color: #111827; line-height: 1.6;"
     out = []
     for block in re.split(r'\n\s*\n', body.strip()):
         s = block.strip()
@@ -715,9 +790,37 @@ def _wrap_bare_paragraphs(body):
             continue
         if s.startswith('<'):
             out.append(s)  # already HTML (a <p>, the card <table>, etc.)
-        else:
-            text = ' '.join(line.strip() for line in s.splitlines())
-            out.append(f'<p style="{para_style}">{text}</p>')
+            continue
+        # Join wrapped prose lines into one paragraph, but keep list items on
+        # their own lines: joining them produced run-together stats like
+        # "Kong: - 49% of reps ... - Ramped reps ...".
+        run = []
+        lines = []
+        for raw in s.splitlines():
+            raw = raw.strip()
+            if not raw:
+                continue
+            # Models reliably glue the first item onto its lead-in sentence
+            # ("Here's what it looks like: 🎯 49% ..."), which no prompt wording
+            # fixed; split it back apart here.
+            m = _LEADIN_ITEM.search(raw)
+            if m and not _IS_LIST_LINE.match(raw):
+                lines.append(raw[:m.start() + 1].strip())
+                lines.append(raw[m.end():].strip())
+            else:
+                lines.append(raw)
+        for line in lines:
+            if not line:
+                continue
+            if _IS_LIST_LINE.match(line):
+                if run:
+                    out.append(f'<p style="{para_style}">{" ".join(run)}</p>')
+                    run = []
+                out.append(f'<p style="{item_style}">{line}</p>')
+            else:
+                run.append(line)
+        if run:
+            out.append(f'<p style="{para_style}">{" ".join(run)}</p>')
     return '\n'.join(out)
 
 
@@ -825,6 +928,20 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
             use_job_focused_approach = False
 
     # Build context for email generation (using clearer variable names)
+    # A campaign replaces the curated-article section as the email's subject matter;
+    # otherwise the model sees an empty blog list and writes a contentless note.
+    if campaign:
+        facts = campaign.get('key_facts') or []
+        content_section = (
+            "CAMPAIGN CONTENT — this is what this email is about. Cover this "
+            "material; do not substitute your own topic:\n\"\"\"\n"
+            + (campaign.get('source_content') or '').strip()
+            + "\n\"\"\"\n\nMUST APPEAR VERBATIM: "
+            + (", ".join(str(f) for f in facts) if facts else "(none)")
+        )
+    else:
+        content_section = "Recommended Blog Posts:\n" + json.dumps(blog_list, indent=2)
+
     email_context = f"""Candidate Name: {name}
 Current Role: {current_title} at {current_company}
 
@@ -843,8 +960,7 @@ Work History:
 Matching Job Openings (if any):
 {json.dumps(job_list, indent=2) if job_list else 'No matching jobs found'}
 
-Recommended Blog Posts:
-{json.dumps(blog_list, indent=2)}
+{content_section}
 """
 
     # Use LLM to generate the email
@@ -1190,6 +1306,14 @@ with the base prompt, follow the user's preferences.
   </tr>
 </table>"""
 
+        # A campaign's subject lines are client-approved copy: choose one verbatim
+        # instead of generating, and skip the generation call entirely.
+        campaign_subject = None
+        if campaign:
+            campaign_subject = _select_campaign_subject(
+                campaign.get('subject_examples') or [],
+                first_name, current_title, current_company)
+
         # Generate subject line separately for better control.
         # Falls back to neutral phrasing so a missing company never leaks another
         # company's name into the subject.
@@ -1224,31 +1348,24 @@ Style examples:
 
 Keep it under 60 characters, no quotation marks, use title case."""
 
-        # A campaign's own subject lines replace the generic style examples.
-        if campaign and (campaign.get('subject_examples') or []):
-            examples = "\n".join(f'- "{x}"' for x in campaign['subject_examples'])
-            subject_prompt = f"""Generate a subject line for an email to {first_name}, a {current_title} at {current_company}.
+        if campaign_subject:
+            # Client-approved copy: used exactly as written, emoji and all.
+            subject = campaign_subject
+        else:
+            subject_response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "user", "content": subject_prompt}
+                ],
+                temperature=0.9,
+                max_tokens=25
+            )
 
-The email is a {sender_company_label} campaign. Match the voice of these client-written
-subject lines, and feel free to use one of them as-is when it already fits:
-{examples}
-
-Keep it under 60 characters, no quotation marks. Preserve any emoji style shown above."""
-
-        subject_response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "user", "content": subject_prompt}
-            ],
-            temperature=0.9,
-            max_tokens=25
-        )
-
-        # Strip wrapping quotes the model sometimes adds, but keep internal
-        # apostrophes — blanket-removing them produced subjects like "Youre".
-        subject = subject_response.choices[0].message.content.strip()
-        subject = subject.replace('"', '').strip().strip("'").strip()
-        subject = subject.replace("[Company]", company or 'our company')
+            # Strip wrapping quotes the model sometimes adds, but keep internal
+            # apostrophes — blanket-removing them produced subjects like "Youre".
+            subject = subject_response.choices[0].message.content.strip()
+            subject = subject.replace('"', '').strip().strip("'").strip()
+            subject = subject.replace("[Company]", company or 'our company')
 
         logger.info(f"Generated {'job-focused' if use_job_focused_approach else 'relationship-nurture'} email for {name}")
 

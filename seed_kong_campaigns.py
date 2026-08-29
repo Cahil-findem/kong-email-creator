@@ -26,11 +26,11 @@ CAMPAIGNS = [
         "source_content": (
             "If you're in sales, you want to know one thing: are reps actually hitting quota?\n"
             "Here's what it looks like at Kong:\n"
-            "- 49% of reps are over 100% attainment\n"
-            "- Ramped reps average 117% attainment\n"
-            "- Productivity per rep doubled Q1 to Q2\n"
-            "- AMS is running at 170% of plan\n"
-            "And we're expanding - Milan is our newest flag in the ground.\n"
+            "\U0001F3AF 49% of reps are over 100% attainment\n"
+            "\U0001F680 Ramped reps average 117% attainment\n"
+            "\U0001F4C8 Productivity per rep doubled Q1 to Q2\n"
+            "\U0001F4B0 AMS is running at 170% of plan\n"
+            "And we're expanding - Milan is our newest flag in the ground. \U0001F1EE\U0001F1F9\n"
             "Not looking right now? No pressure. But if Kong is on your radar, "
             "this is what we're building."
         ),
