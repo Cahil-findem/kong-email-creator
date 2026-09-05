@@ -16,6 +16,7 @@ candidate_matching.log
 test_candidate.json
 two_new_candidates.json
 allstate_candidates.json
+vertex_candidates.json
 
 # Virtual environment
 venv/

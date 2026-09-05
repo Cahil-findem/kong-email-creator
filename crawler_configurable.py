@@ -43,6 +43,14 @@ DEFAULT_CONFIG = {
     "max_retries": 3,
     "delay": 2.0,
     "headless": True,
+    # Playwright browser channel; None uses bundled Chromium, "chrome" uses the
+    # installed Google Chrome (needed for hosts that block Chromium).
+    "channel": None,
+    # CSS selectors tried first for the article title. Useful when a page's first
+    # heading-with-"title"-in-the-class is site chrome rather than the article.
+    "title_selectors": [],
+    # Trailing site-name suffixes stripped from og:title, e.g. " | Acme Newsroom".
+    "title_strip_suffixes": [],
     "wait_until": "networkidle",  # page.goto wait strategy; some sites never go idle
     "scroll_count": 0,            # times to scroll the page to trigger lazy-loaded content
     "listing_urls": None,         # optional list of listing pages (overrides single listing_url)
@@ -139,6 +147,61 @@ SITE_CONFIGS = {
         # The sitemap is ordered oldest-first and the archive is dominated by
         # older financial releases, so default to the most recent news.
         "newest_first": True,
+    },
+    # Vertex has two content sources on different hosts, so it needs two configs.
+    # Both write company="Vertex". Neither host serves a usable sitemap
+    # (news.vrtx.com/sitemap.xml is 404; www.vrtx.com's is XSL-rendered), and both
+    # return 403 to plain HTTP, so discovery is listing-based via real Chrome.
+    "vertex-news": {
+        "company": "Vertex",
+        "base_url": "https://news.vrtx.com",
+        "title_strip_suffixes": [" | Vertex Pharmaceuticals Newsroom"],
+        "listing_urls": [
+            "https://news.vrtx.com/press-releases?page=0",
+            "https://news.vrtx.com/press-releases?page=1",
+        ],
+        "discovery_mode": "listing",
+        # Deliberately empty: the card wrappers hold several links each and the
+        # extractor only takes the first per element, so scanning every anchor
+        # matching article_url_contains is both simpler and complete here.
+        "listing_selectors": [],
+        "scroll_count": 4,
+        # Articles live under /news-releases/news-release-details/<slug> even
+        # though the listing itself is at /press-releases.
+        "article_url_contains": "/news-releases/news-release-details/",
+        "article_url_excludes": ["/media-library/", "/node/"],
+        "min_path_segments": 3,
+        "content_selectors": ["article", "main", 'div[class*="content"]',
+                              'div[class*="news"]'],
+        "channel": "chrome",
+        "wait_until": "domcontentloaded",
+        "dynamic_wait_ms": 4000,
+        "delay": 6.0,  # no Crawl-delay published; kept slow for a protected host
+    },
+    "vertex-stories": {
+        "company": "Vertex",
+        "base_url": "https://www.vrtx.com",
+        "title_strip_suffixes": [" | Vertex Pharmaceuticals"],
+        "listing_urls": [
+            "https://www.vrtx.com/stories/?sort_by=created&sort_order=DESC&page=0",
+            "https://www.vrtx.com/stories/?sort_by=created&sort_order=DESC&page=1",
+        ],
+        "discovery_mode": "listing",
+        # Empty for the same reason as vertex-news: fall through to the
+        # match-every-anchor path.
+        "listing_selectors": [],
+        "scroll_count": 4,
+        "article_url_contains": "/stories/",
+        # The listing's own sort/pagination links also contain /stories/, so drop
+        # anything carrying a query string or fragment.
+        "article_url_excludes": ["?", "#"],
+        "min_path_segments": 2,
+        "content_selectors": ["article", "main", 'div[class*="content"]',
+                              'div[class*="story"]'],
+        "channel": "chrome",
+        "wait_until": "domcontentloaded",
+        "dynamic_wait_ms": 4000,
+        "delay": 6.0,
     },
 }
 
@@ -463,12 +526,34 @@ class ConfigurableBlogCrawler:
         post_data: Dict = {"url": url, "scraped_at": datetime.utcnow().isoformat()}
 
         try:
-            # Title
-            title = soup.find(["h1", "h2"], class_=lambda x: x and ("title" in x.lower() or "heading" in x.lower()))
-            if not title:
-                title = soup.find("h1")
-            if title:
-                post_data["title"] = title.get_text(strip=True)
+            # Title. Configured selectors win; then og:title, which is reliable and
+            # site-agnostic; only then the heading heuristic, which on some sites
+            # matches nav chrome (Vertex press releases return "Media library").
+            title_text = None
+            for sel in self.config.get("title_selectors") or []:
+                el = soup.select_one(sel)
+                if el and el.get_text(strip=True):
+                    title_text = el.get_text(strip=True)
+                    break
+            if not title_text:
+                for attrs in ({"property": "og:title"}, {"name": "twitter:title"}):
+                    meta_title = soup.find("meta", attrs=attrs)
+                    if meta_title and meta_title.get("content"):
+                        title_text = meta_title["content"].strip()
+                        break
+                if title_text:
+                    for suffix in self.config.get("title_strip_suffixes") or []:
+                        if title_text.endswith(suffix):
+                            title_text = title_text[: -len(suffix)].strip()
+                            break
+            if not title_text:
+                title = soup.find(["h1", "h2"], class_=lambda x: x and ("title" in x.lower() or "heading" in x.lower()))
+                if not title:
+                    title = soup.find("h1")
+                if title:
+                    title_text = title.get_text(strip=True)
+            if title_text:
+                post_data["title"] = title_text
 
             # Content
             content = None
@@ -499,12 +584,13 @@ class ConfigurableBlogCrawler:
                         post_data["published_date"] = date_elem["content"]
                     else:
                         post_data["published_date"] = date_elem.get_text(strip=True)
-                    # Normalize ISO 8601 timestamps to plain YYYY-MM-DD to match
-                    # the format other sites store. Guarded so human-readable
-                    # dates (e.g. "April 14, 2026") pass through untouched.
-                    pd = post_data.get("published_date") or ""
-                    if re.match(r"^\d{4}-\d{2}-\d{2}T", pd):
-                        post_data["published_date"] = pd[:10]
+                    # Normalize whatever was scraped to YYYY-MM-DD, discarding
+                    # values that aren't dates at all.
+                    cleaned = self._clean_date(post_data.get("published_date"))
+                    if cleaned:
+                        post_data["published_date"] = cleaned
+                    else:
+                        post_data.pop("published_date", None)
                     break
 
             # Author
@@ -583,6 +669,41 @@ class ConfigurableBlogCrawler:
 
     # ── Helpers ─────────────────────────────────────────────────────────────
 
+    _DATE_LEAD = re.compile(
+        r'^\s*('
+        r'\d{4}-\d{2}-\d{2}'                                    # 2026-07-06
+        r'|[A-Z][a-z]{2,8}\.?\s+\d{1,2},?\s+\d{4}'              # July 6, 2026 / Nov 18, 2025
+        r'|\d{1,2}\s+[A-Z][a-z]{2,8}\.?\s+\d{4}'                # 6 July 2026
+        r')'
+    )
+    _DATE_FORMATS = ("%Y-%m-%d", "%B %d, %Y", "%b %d, %Y", "%B %d %Y",
+                     "%b %d %Y", "%d %B %Y", "%d %b %Y")
+
+    @classmethod
+    def _clean_date(cls, raw: Optional[str]) -> Optional[str]:
+        """Pull a real date out of a scraped string and normalize to YYYY-MM-DD.
+
+        Scraped date nodes often carry adjacent UI text -- Vertex stories yielded
+        "Nov 18, 20252 min readShare:" because the read-time and share label sit
+        in the same block. Take only the leading date and drop the rest; return
+        None rather than storing text that isn't a date.
+        """
+        if not raw:
+            return None
+        raw = raw.strip()
+        if raw.startswith(("20", "19")) and "T" in raw[:11]:
+            return raw[:10]                      # already ISO 8601 timestamp
+        m = cls._DATE_LEAD.match(raw)
+        if not m:
+            return None
+        candidate = m.group(1).replace(".", "").strip()
+        for fmt in cls._DATE_FORMATS:
+            try:
+                return datetime.strptime(candidate, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        return candidate
+
     def _make_absolute_url(self, url: str) -> str:
         """Convert a relative URL to absolute using the site's base_url."""
         if url.startswith("http"):
@@ -632,13 +753,18 @@ class ConfigurableBlogCrawler:
                      f"dry_run={dry_run})")
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=self.config["headless"],
-                args=[
+            # Some hosts (Vertex, Box) reject bundled Chromium but serve real
+            # Chrome fine, so a site may request the installed browser.
+            launch_kwargs = {
+                "headless": self.config["headless"],
+                "args": [
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                 ],
-            )
+            }
+            if self.config.get("channel"):
+                launch_kwargs["channel"] = self.config["channel"]
+            browser = p.chromium.launch(**launch_kwargs)
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                            "AppleWebKit/537.36 (KHTML, like Gecko) "
