@@ -520,6 +520,82 @@ def match_blogs_for_candidate_internal(candidate_id, company=None):
 
 
 
+def _candidate_work_history(candidate_profile):
+    """Return (history_lines, total_years) for a candidate, or ([], None).
+
+    The RPC that loads candidates for matching returns only name/title/summary --
+    no dates and no employment history -- so the evaluator was rejecting senior
+    people for "possibly not meeting the years requirement" while having no way
+    to see how long they had actually worked. Pull the history out of the stored
+    raw_profile instead.
+    """
+    candidate_id = candidate_profile.get('candidate_id')
+    if not candidate_id:
+        return [], None
+    try:
+        row = matcher.supabase.table('candidate_profiles').select('raw_profile') \
+            .eq('candidate_id', candidate_id).execute().data
+    except Exception as e:
+        logger.warning(f"Could not load work history for {candidate_id}: {e}")
+        return [], None
+    if not row:
+        return [], None
+    raw = row[0].get('raw_profile')
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return [], None
+    if not isinstance(raw, dict):
+        return [], None
+
+    def _parse(d):
+        if not d:
+            return None
+        try:
+            return datetime.strptime(str(d)[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+
+    entries = []
+    for w in raw.get('workexp') or []:
+        company = ((w.get('company') or {}).get('name') or '').strip()
+        projects = w.get('projects') or []
+        title = ''
+        if projects:
+            title = ((projects[0].get('role_and_group') or {}).get('title') or '').strip()
+        dur = w.get('duration') or {}
+        start = _parse(dur.get('start_date'))
+        end = _parse(dur.get('end_date'))
+        present = bool(dur.get('to_present')) or (dur.get('end_date') is None and start is not None)
+        if not (company or title):
+            continue
+        entries.append({'company': company, 'title': title, 'start': start,
+                        'end': end, 'present': present})
+    if not entries:
+        return [], None
+
+    starts = [e['start'] for e in entries if e['start']]
+    if starts:
+        earliest = min(starts)
+        ends = [e['end'] for e in entries if e['end']]
+        latest = datetime.utcnow() if any(e['present'] for e in entries) else (max(ends) if ends else None)
+        total_years = round((latest - earliest).days / 365.25, 1) if latest else None
+    else:
+        total_years = None
+
+    entries.sort(key=lambda e: e['start'] or datetime.min, reverse=True)
+    lines = []
+    for e in entries[:8]:
+        span = ''
+        if e['start']:
+            span = e['start'].strftime('%Y-%m') + ' to ' + (
+                'present' if e['present'] else (e['end'].strftime('%Y-%m') if e['end'] else '?'))
+        lines.append(f"- {e['title'] or 'Role'} at {e['company'] or 'Unknown'}"
+                     + (f" ({span})" if span else ""))
+    return lines, total_years
+
+
 def evaluate_job_match_with_llm(candidate_profile, job, semantic_similarity):
     """
     Use LLM to evaluate if candidate is a genuine match for the job
@@ -531,6 +607,13 @@ def evaluate_job_match_with_llm(candidate_profile, job, semantic_similarity):
         candidate_title = candidate_profile.get('current_title', '')
         candidate_summary = candidate_profile.get('professional_summary', '')
         candidate_preferences = candidate_profile.get('job_preferences', '')
+
+        # Real employment history, so seniority and years-of-experience are
+        # judged on evidence rather than inferred from the job title.
+        history_lines, total_years = _candidate_work_history(candidate_profile)
+        history_block = "\n".join(history_lines) if history_lines else "- Not available"
+        experience_line = (f"{total_years} years (earliest role to present)"
+                           if total_years is not None else "Not available")
 
         # Extract job information
         job_title = job.get('position', '')
@@ -555,6 +638,9 @@ Name: {candidate_name}
 Current Title: {candidate_title}
 Professional Summary: {candidate_summary[:400]}
 Job Preferences: {candidate_preferences}
+Total Professional Experience: {experience_line}
+Work History (most recent first):
+{history_block}
 
 JOB OPENING:
 Position: {job_title}
@@ -572,8 +658,19 @@ EVALUATION CRITERIA:
    - REJECT if core profession mismatches (e.g., Designer applying to Engineer role)
 
 2. **Seniority Match**: Does the candidate's level appropriately match the job level?
-   - Consider if this is a step up, lateral, or step down
-   - Senior candidates can do Senior or Staff roles
+   - A single level step up is EXPECTED and ACCEPTABLE. Outreach exists to find
+     people ready for their next role. A Senior Director applying to an Executive
+     Director role, or a Director to a Senior Director role, is a normal
+     progression -- ACCEPT it when the other criteria are met.
+   - Do NOT reject solely because the candidate's current title differs from the
+     posted title, and do not invent concerns about "executive presence" or
+     "strategic oversight" that the profile simply does not speak to.
+   - Reject on seniority ONLY for a gap of two or more levels (e.g. an individual
+     contributor applying to a VP role) or a clear step down.
+   - Use the Total Professional Experience and Work History above to judge years
+     of experience. Do NOT speculate that the candidate may not meet a years
+     requirement when the stated total already satisfies it, and do not treat a
+     missing detail as a shortfall.
 
 3. **Transferable Skills**: For senior technical roles, evaluate based on:
    - Strong fundamentals and problem-solving ability matter more than specific tech
@@ -596,7 +693,7 @@ Respond ONLY with valid JSON in this exact format:
   "concerns": ["concern1", "concern2"]
 }}
 
-IMPORTANT: Be realistic about senior roles - strong engineering fundamentals and seniority match matters more than specific tech experience. ONLY reject if there's a core profession mismatch (e.g., Designer for Engineer role) or major seniority gap."""
+IMPORTANT: Be realistic about senior roles - strong fundamentals and domain match matter more than an exact title match. ONLY reject if there's a core profession mismatch (e.g., Designer for Engineer role), a genuine shortfall against a stated must-have (such as a required degree the candidate does not hold), or a seniority gap of two or more levels. A one-level step up is not a reason to reject."""
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
