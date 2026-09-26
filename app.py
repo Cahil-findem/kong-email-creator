@@ -618,6 +618,24 @@ def evaluate_job_match_with_llm(candidate_profile, job, semantic_similarity):
         # judged on evidence rather than inferred from the job title.
         history_lines, total_years = _candidate_work_history(candidate_profile)
         history_block = "\n".join(history_lines) if history_lines else "- Not available"
+
+        # Skills were never reaching the evaluator, so requirements like
+        # "knowledge of the telecommunications industry" were judged blind --
+        # a candidate listing GSM and Mobile Communications was rejected as
+        # having no telecom exposure.
+        candidate_skills = candidate_profile.get('skills') or []
+        if isinstance(candidate_skills, str):
+            try:
+                candidate_skills = json.loads(candidate_skills)
+            except json.JSONDecodeError:
+                candidate_skills = [candidate_skills]
+        seen_skills, skill_list = set(), []
+        for sk in candidate_skills if isinstance(candidate_skills, list) else []:
+            label = str(sk).strip()
+            if label and label.lower() not in seen_skills:
+                seen_skills.add(label.lower())
+                skill_list.append(label)
+        skills_line = ", ".join(skill_list[:40]) if skill_list else "Not available"
         experience_line = (f"{total_years} years (earliest role to present)"
                            if total_years is not None else "Not available")
 
@@ -644,6 +662,7 @@ Name: {candidate_name}
 Current Title: {candidate_title}
 Professional Summary: {candidate_summary[:400]}
 Job Preferences: {candidate_preferences}
+Skills: {skills_line}
 Total Professional Experience: {experience_line}
 Work History (most recent first):
 {history_block}
@@ -682,6 +701,15 @@ EVALUATION CRITERIA:
    - Senior engineers can learn new stacks/tools quickly
 
 4. **Core Requirements**: Do they meet the fundamental must-have requirements?
+   - When a requirement lists alternatives ("Government, Strategic, or
+     Enterprise"), meeting ANY ONE of them satisfies it. Do not require all of
+     them, and do not reject for lacking one alternative when another is met.
+   - A title or summary naming the segment (e.g. "Enterprise", "Global
+     Enterprise", "Strategic Accounts", "Public Sector") is evidence of it.
+   - A requirement for KNOWLEDGE of an industry can be evidenced by relevant
+     skills or by work at a company in that industry; it is not the same as
+     requiring years employed in that industry. Check the Skills line before
+     calling it missing. If there is genuinely no evidence, it is a real gap.
    - Focus on core competencies, not specific technologies
    - "Strong coding skills" matters more than "experience with Tool X"
 
