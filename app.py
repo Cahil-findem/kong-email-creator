@@ -600,6 +600,12 @@ def evaluate_job_match_with_llm(candidate_profile, job, semantic_similarity):
     """
     Use LLM to evaluate if candidate is a genuine match for the job
     Returns: dict with is_match, confidence, reasoning, or None if evaluation fails
+
+    `semantic_similarity` is deliberately NOT shown to the model. When it was,
+    the returned match_score tracked it almost one-for-one -- the same profile
+    scored 39-45 when shown 39%, 60 when shown 60%, and 85 when shown 85% --
+    so this stage echoed stage 1 instead of judging fit on the evidence. Stage 1
+    already gates on similarity; this stage must be independent of it.
     """
     try:
         # Extract candidate information
@@ -647,8 +653,6 @@ Position: {job_title}
 About Role: {job_description[:400]}
 Must-Have Requirements: {', '.join(must_have[:5]) if must_have else 'Not specified'}
 Nice-to-Have: {', '.join(nice_to_have[:3]) if nice_to_have else 'Not specified'}
-
-Semantic Similarity Score: {semantic_similarity:.1%}
 
 EVALUATION CRITERIA:
 1. **Role Type Match** (CRITICAL): Does the candidate's core profession align with the job type?
@@ -701,7 +705,11 @@ IMPORTANT: Be realistic about senior roles - strong fundamentals and domain matc
                 {"role": "system", "content": "You are an expert technical recruiter evaluating candidate-job fit. Be precise and honest in your assessments."},
                 {"role": "user", "content": evaluation_prompt}
             ],
-            temperature=0.3,
+            # Deterministic on purpose: this call decides whether a candidate gets
+            # a job email or a nurture email. At 0.3 a borderline profile flipped
+            # between the two on identical input (5/5 job-focused, then 1/5 an
+            # hour later, with nothing changed).
+            temperature=0,
             max_tokens=300,
             response_format={"type": "json_object"}
         )
