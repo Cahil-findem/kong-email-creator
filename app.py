@@ -600,6 +600,12 @@ def evaluate_job_match_with_llm(candidate_profile, job, semantic_similarity):
     """
     Use LLM to evaluate if candidate is a genuine match for the job
     Returns: dict with is_match, confidence, reasoning, or None if evaluation fails
+
+    `semantic_similarity` is deliberately NOT shown to the model. When it was,
+    the returned match_score tracked it almost one-for-one -- the same profile
+    scored 39-45 when shown 39%, 60 when shown 60%, and 85 when shown 85% --
+    so this stage echoed stage 1 instead of judging fit on the evidence. Stage 1
+    already gates on similarity; this stage must be independent of it.
     """
     try:
         # Extract candidate information
@@ -612,6 +618,24 @@ def evaluate_job_match_with_llm(candidate_profile, job, semantic_similarity):
         # judged on evidence rather than inferred from the job title.
         history_lines, total_years = _candidate_work_history(candidate_profile)
         history_block = "\n".join(history_lines) if history_lines else "- Not available"
+
+        # Skills were never reaching the evaluator, so requirements like
+        # "knowledge of the telecommunications industry" were judged blind --
+        # a candidate listing GSM and Mobile Communications was rejected as
+        # having no telecom exposure.
+        candidate_skills = candidate_profile.get('skills') or []
+        if isinstance(candidate_skills, str):
+            try:
+                candidate_skills = json.loads(candidate_skills)
+            except json.JSONDecodeError:
+                candidate_skills = [candidate_skills]
+        seen_skills, skill_list = set(), []
+        for sk in candidate_skills if isinstance(candidate_skills, list) else []:
+            label = str(sk).strip()
+            if label and label.lower() not in seen_skills:
+                seen_skills.add(label.lower())
+                skill_list.append(label)
+        skills_line = ", ".join(skill_list[:40]) if skill_list else "Not available"
         experience_line = (f"{total_years} years (earliest role to present)"
                            if total_years is not None else "Not available")
 
@@ -638,6 +662,7 @@ Name: {candidate_name}
 Current Title: {candidate_title}
 Professional Summary: {candidate_summary[:400]}
 Job Preferences: {candidate_preferences}
+Skills: {skills_line}
 Total Professional Experience: {experience_line}
 Work History (most recent first):
 {history_block}
@@ -647,8 +672,6 @@ Position: {job_title}
 About Role: {job_description[:400]}
 Must-Have Requirements: {', '.join(must_have[:5]) if must_have else 'Not specified'}
 Nice-to-Have: {', '.join(nice_to_have[:3]) if nice_to_have else 'Not specified'}
-
-Semantic Similarity Score: {semantic_similarity:.1%}
 
 EVALUATION CRITERIA:
 1. **Role Type Match** (CRITICAL): Does the candidate's core profession align with the job type?
@@ -678,6 +701,15 @@ EVALUATION CRITERIA:
    - Senior engineers can learn new stacks/tools quickly
 
 4. **Core Requirements**: Do they meet the fundamental must-have requirements?
+   - When a requirement lists alternatives ("Government, Strategic, or
+     Enterprise"), meeting ANY ONE of them satisfies it. Do not require all of
+     them, and do not reject for lacking one alternative when another is met.
+   - A title or summary naming the segment (e.g. "Enterprise", "Global
+     Enterprise", "Strategic Accounts", "Public Sector") is evidence of it.
+   - A requirement for KNOWLEDGE of an industry can be evidenced by relevant
+     skills or by work at a company in that industry; it is not the same as
+     requiring years employed in that industry. Check the Skills line before
+     calling it missing. If there is genuinely no evidence, it is a real gap.
    - Focus on core competencies, not specific technologies
    - "Strong coding skills" matters more than "experience with Tool X"
 
@@ -701,7 +733,11 @@ IMPORTANT: Be realistic about senior roles - strong fundamentals and domain matc
                 {"role": "system", "content": "You are an expert technical recruiter evaluating candidate-job fit. Be precise and honest in your assessments."},
                 {"role": "user", "content": evaluation_prompt}
             ],
-            temperature=0.3,
+            # Deterministic on purpose: this call decides whether a candidate gets
+            # a job email or a nurture email. At 0.3 a borderline profile flipped
+            # between the two on identical input (5/5 job-focused, then 1/5 an
+            # hour later, with nothing changed).
+            temperature=0,
             max_tokens=300,
             response_format={"type": "json_object"}
         )

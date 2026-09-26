@@ -203,6 +203,28 @@ SITE_CONFIGS = {
         "dynamic_wait_ms": 4000,
         "delay": 6.0,
     },
+    "t-mobile": {
+        "company": "T-Mobile",
+        "base_url": "https://www.t-mobile.com",
+        "listing_url": "https://www.t-mobile.com/news/stories",
+        # The newsroom's Yoast index splits stories across story-sitemap1..7;
+        # sitemap7 is the live one (285 URLs, lastmod through the present),
+        # the rest are historical archives.
+        "sitemap_url": "https://www.t-mobile.com/news/_admin/story-sitemap7.xml",
+        "discovery_mode": "sitemap",
+        # Stories are /news/<category>/<slug>; /news/category/<x> are index pages.
+        "article_url_contains": "/news/",
+        "article_url_excludes": ["/news/category/", "/news/_next/", "/news/_admin/",
+                                 "/news/tag/", "/news/author/"],
+        "min_path_segments": 3,
+        "content_selectors": ["article", "main", 'div[class*="content"]'],
+        # og:title ends in " - T\u2011Mobile Newsroom" -- the brand uses a
+        # non-breaking hyphen (U+2011), so the ASCII form alone never matches.
+        "title_strip_suffixes": [" - T\u2011Mobile Newsroom", " - T-Mobile Newsroom"],
+        "wait_until": "domcontentloaded",
+        "dynamic_wait_ms": 2500,
+        "delay": 4.0,  # robots.txt sets no crawl-delay; stay polite
+    },
 }
 
 
