@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import os
 import re
+import html as _html
 import json
 import logging
 import numpy as np
@@ -319,6 +320,50 @@ def get_company_campaign(company, campaign_key):
     return None
 
 
+def _insert_before_signoff(email_body, block):
+    """Place `block` just before the sign-off paragraph, else append it."""
+    signoff = re.search(r'<p[^>]*>\s*(Best|Thanks|Cheers|Warmly)\b', email_body, re.IGNORECASE)
+    if signoff:
+        return email_body[:signoff.start()] + block + "\n" + email_body[signoff.start():]
+    return email_body + "\n" + block
+
+
+def _build_blog_card(blog, lead_in=None):
+    """Render one blog card in code, matching the markup the nurture prompt uses."""
+    esc = lambda v: _html.escape(str(v or ''), quote=True)
+    url, title = esc(blog.get('blog_url')), esc(blog.get('blog_title'))
+    image = esc(blog.get('blog_featured_image'))
+    fit = esc(blog.get('email_image_fit') or 'cover')
+    source = _blog_source_label(blog.get('blog_url'))
+    blurb = blog.get('email_card_blurb')
+    parts = []
+    if lead_in:
+        parts.append('<p style="margin: 0 0 8px 0; font-size: 15px; color: #6b7280; '
+                     f'line-height: 1.5;">{esc(lead_in)}</p>')
+    parts.append(
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" '
+        'style="width: 100%; margin: 0 0 20px 0; border-collapse: collapse;">\n  <tr>')
+    if image:
+        parts.append(
+            '    <td width="160" style="width: 160px; vertical-align: top; padding-right: 16px;">\n'
+            f'      <a href="{url}" style="text-decoration: none;">\n'
+            f'        <img src="{image}" alt="{title}" width="160" height="92" '
+            f'style="width: 160px; height: 92px; object-fit: {fit}; border-radius: 10px; '
+            'display: block; border: 0;">\n      </a>\n    </td>')
+    body = [f'      <a href="{url}" style="font-size: 15px; font-weight: 600; color: #101828; '
+            'text-decoration: none; line-height: 1.35; display: block; margin: 0 0 4px 0;">'
+            f'{title}</a>']
+    if source:
+        body.append('      <div style="font-size: 12px; font-weight: 500; color: #6b7280; '
+                    f'line-height: 1.4; margin: 0 0 6px 0;">{esc(source)}</div>')
+    if blurb:
+        body.append('      <p style="font-size: 13px; color: #6b7280; line-height: 1.45; '
+                    f'margin: 0;">{esc(blurb)}</p>')
+    parts.append('    <td style="vertical-align: top;">\n' + "\n".join(body) + '\n    </td>')
+    parts.append('  </tr>\n</table>')
+    return "\n".join(parts)
+
+
 def _build_campaign_card(campaign):
     """Render the campaign image + CTA in code.
 
@@ -465,6 +510,46 @@ def _missing_key_facts(email_body, campaign):
     return missing
 
 
+# Company-scoped pinned blogs: ALWAYS shown first, with the remaining slot(s)
+# auto-matched per candidate. Contrast COMPANY_FORCED_BLOGS, which replaces
+# matching entirely. Same entry shape and per-card overrides as that dict, and
+# URLs must likewise already exist in blog_posts for the same company.
+COMPANY_PINNED_BLOGS = {
+    "Genesys": [
+        {
+            "url": "https://www.youtube.com/watch?v=VnEow5S2QJ8",
+            "card_blurb": (
+                "Enterprise Account Director Henry Finbow on why he joined Genesys "
+                "and what it's like building AI-powered experience orchestration."
+            ),
+            # Nurture lead-in. It's an employer-brand video, so it's framed as
+            # something shared, not as a match to the candidate's interests.
+            "intro": "I wanted to share a short video from our team: Henry Finbow on why "
+                     "he chose Genesys and what it's like building what's next in AI.",
+            # Lead-in when the email is job-focused.
+            "job_email_intro": "In the meantime, here's a 71-second look at what it's "
+                               "like to build what's next at Genesys:",
+        },
+    ],
+}
+
+
+def _apply_blog_overrides(blogs, entries):
+    """Copy per-card overrides (intro, card_blurb, image_fit) onto matched blogs."""
+    overrides = {e['url']: e for e in entries if isinstance(e, dict) and e.get('url')}
+    for b in blogs:
+        e = overrides.get(b.get('blog_url'))
+        if not e:
+            continue
+        if e.get('intro'):
+            b['email_intro'] = e['intro']
+        if e.get('card_blurb'):
+            b['email_card_blurb'] = e['card_blurb']
+        if e.get('image_fit'):
+            b['email_image_fit'] = e['image_fit']
+    return blogs
+
+
 def match_blogs_for_candidate_internal(candidate_id, company=None):
     """
     Internal: Find matching blogs for a candidate using hybrid approach
@@ -477,21 +562,9 @@ def match_blogs_for_candidate_internal(candidate_id, company=None):
         if forced_entries:
             # Entries may be plain URL strings or {url, intro} dicts.
             forced_urls = [e['url'] if isinstance(e, dict) else e for e in forced_entries]
-            url_to_intro = {e['url']: e['intro'] for e in forced_entries
-                            if isinstance(e, dict) and e.get('intro')}
-            url_to_blurb = {e['url']: e['card_blurb'] for e in forced_entries
-                            if isinstance(e, dict) and e.get('card_blurb')}
-            url_to_fit = {e['url']: e['image_fit'] for e in forced_entries
-                          if isinstance(e, dict) and e.get('image_fit')}
             forced = matcher.get_pinned_blogs_details(forced_urls, company=company)
             if forced:
-                for b in forced:
-                    if b['blog_url'] in url_to_intro:
-                        b['email_intro'] = url_to_intro[b['blog_url']]
-                    if b['blog_url'] in url_to_blurb:
-                        b['email_card_blurb'] = url_to_blurb[b['blog_url']]
-                    if b['blog_url'] in url_to_fit:
-                        b['email_image_fit'] = url_to_fit[b['blog_url']]
+                _apply_blog_overrides(forced, forced_entries)
                 logger.info(f"Using {len(forced)} company-forced blog(s) for '{company}'; skipping auto-match")
                 return forced
             logger.warning(f"Forced blog URLs for '{company}' not found in blog_posts; falling back to auto-match")
@@ -499,13 +572,19 @@ def match_blogs_for_candidate_internal(candidate_id, company=None):
         logger.info(f"Finding blog matches for {candidate_id} using hybrid LLM approach...")
 
         # Use hybrid approach: embeddings get top 30, LLM selects best 3
+        # Company pins lead; the matcher fills the remaining slot(s) per candidate.
+        pinned_entries = COMPANY_PINNED_BLOGS.get(company, []) if company else []
+        pinned_urls = [e['url'] if isinstance(e, dict) else e for e in pinned_entries]
         selected_blogs = matcher.find_blogs_for_candidate_hybrid(
             candidate_id,
             match_threshold=0.25,
             top_n_embeddings=30,  # LLM reviews 30 candidates
             final_n_llm=2,         # LLM selects best 2 (total, including any pinned)
-            company=company
+            company=company,
+            extra_pinned_urls=pinned_urls
         )
+        if selected_blogs and pinned_entries:
+            _apply_blog_overrides(selected_blogs, pinned_entries)
 
         if not selected_blogs:
             logger.info(f"No blog matches found for {candidate_id}")
@@ -1036,18 +1115,26 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
     job_list = []
     if job_matches and len(job_matches) > 0:
         for job in job_matches[:3]:  # Max 3 jobs for email
-            job_list.append({
+            entry = {
                 'position': job['position'],
                 'company': job.get('company', ''),
                 'location_type': job.get('location_type', ''),
-                'location': f"{job.get('location_city', '')}, {job.get('location_country', '')}".strip(', '),
-                'compensation': f"{job.get('compensation_currency', '')} {job.get('compensation_min', 0):,.0f} - {job.get('compensation_max', 0):,.0f}",
+                'location': f"{job.get('location_city') or ''}, {job.get('location_country') or ''}".strip(', '),
                 'about_role': (job.get('about_role') or '')[:250],
                 'application_link': job.get('application_link', ''),
-                'match_score': f"{job.get('similarity', 0) * 100:.0f}%",
-                'similarity': job.get('similarity', 0),
+                'match_score': f"{(job.get('similarity') or 0) * 100:.0f}%",
+                'similarity': job.get('similarity') or 0,
                 'llm_reasoning': job.get('llm_evaluation', {}).get('reasoning', '') if isinstance(job.get('llm_evaluation'), dict) else ''
-            })
+            }
+            # Many postings publish no salary. The columns are then NULL, and
+            # .get(key, 0) returns None rather than 0, so formatting crashed
+            # generation for every job-focused email. Omit the field instead of
+            # showing "Not disclosed", which invites the model to comment on it.
+            comp_min, comp_max = job.get('compensation_min'), job.get('compensation_max')
+            if isinstance(comp_min, (int, float)) and isinstance(comp_max, (int, float)):
+                entry['compensation'] = (f"{job.get('compensation_currency') or ''} "
+                                         f"{comp_min:,.0f} - {comp_max:,.0f}").strip()
+            job_list.append(entry)
 
     # Decide which email approach to use
     # If jobs were confirmed by the matching LLM, use job-focused approach
@@ -1396,15 +1483,23 @@ with the base prompt, follow the user's preferences.
             elif card_html:
                 # Model omitted the token; place the card before the sign-off if we
                 # can find one, else append it.
-                signoff = re.search(r'<p[^>]*>\s*(Best|Thanks|Cheers|Warmly)\b',
-                                    email_body, re.IGNORECASE)
-                if signoff:
-                    email_body = (email_body[:signoff.start()] + card_html + "\n"
-                                  + email_body[signoff.start():])
-                else:
-                    email_body = email_body + "\n" + card_html
+                email_body = _insert_before_signoff(email_body, card_html)
                 logger.info(f"Campaign '{campaign.get('key')}': card token missing, "
                             "inserted card automatically")
+
+        # A company's pinned blogs are meant to appear in EVERY email. The job-focused
+        # template has no blog section, so without this a candidate who matched the
+        # job lost the pinned card. Built in code so the URL and image can't drift.
+        if use_job_focused_approach and not campaign and company in COMPANY_PINNED_BLOGS:
+            pinned_cfg = {e['url']: e for e in COMPANY_PINNED_BLOGS[company] if isinstance(e, dict)}
+            pinned_blogs = [b for b in (blog_recommendations or []) if b.get('blog_url') in pinned_cfg]
+            for b in pinned_blogs:
+                cfg = pinned_cfg[b['blog_url']]
+                intro = (cfg.get('job_email_intro') or cfg.get('intro')
+                         or f"In the meantime, here's a quick look at life at {company}:")
+                email_body = _insert_before_signoff(email_body, _build_blog_card(b, lead_in=intro))
+            if pinned_blogs:
+                logger.info(f"Added {len(pinned_blogs)} pinned card(s) to job-focused email for {company}")
 
         # Append the sender company's stored signature after the sign-off.
         # Kept outside the LLM so names/links/images render exactly as provided.
