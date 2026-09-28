@@ -116,6 +116,10 @@ class CandidateBlogMatcher:
                         'max_similarity': 1.0,  # Mark as manually selected
                         'is_pinned': True
                     })
+                # `.in_()` returns rows in database order, not the order asked for,
+                # so a company pin meant to lead the email could land second.
+                order = {url: i for i, url in enumerate(pinned_blog_urls)}
+                pinned_blogs.sort(key=lambda b: order.get(b['blog_url'], len(order)))
                 logger.info(f"Found {len(pinned_blogs)} pinned blogs")
                 return pinned_blogs
             else:
@@ -323,11 +327,15 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
         match_threshold: float = 0.35,
         top_n_embeddings: int = 10,
         final_n_llm: int = 3,
-        company: Optional[str] = None
+        company: Optional[str] = None,
+        extra_pinned_urls: Optional[List[str]] = None
     ) -> List[Dict]:
         """
         Hybrid approach: Use embeddings to get top N, then LLM to select final few
-        Also supports pinned blogs - these will always be included first
+        Also supports pinned blogs - these will always be included first.
+
+        `extra_pinned_urls` are company-level pins. They lead, ahead of the
+        candidate's own pins, and remaining slots are auto-matched as usual.
 
         Args:
             candidate_id: External candidate ID
@@ -346,8 +354,11 @@ Respond with ONLY a JSON array of the blog post numbers (1-{len(blogs)}), like: 
                 logger.warning(f"Candidate {candidate_id} not found")
                 return []
 
-            # Step 0: Check for pinned blogs
-            pinned_blog_urls = candidate.get('pinned_blogs', [])
+            # Step 0: Check for pinned blogs -- company pins first, then the
+            # candidate's own, without duplicates.
+            pinned_blog_urls = list(dict.fromkeys(
+                list(extra_pinned_urls or []) + list(candidate.get('pinned_blogs') or [])
+            ))
             pinned_blogs = []
 
             if pinned_blog_urls:
