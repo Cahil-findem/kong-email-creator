@@ -225,6 +225,31 @@ SITE_CONFIGS = {
         "dynamic_wait_ms": 2500,
         "delay": 4.0,  # robots.txt sets no crawl-delay; stay polite
     },
+    "genesys": {
+        "company": "Genesys",
+        "base_url": "https://www.genesys.com",
+        # Listing pages rather than sitemap-pt-blog.xml: neither order is purely
+        # chronological -- the listing leads with a sticky post from 2025, and
+        # sitemap lastmod reflects edits -- so over-fetch the first four pages and
+        # rank by the JSON-LD datePublished each post carries.
+        "listing_urls": [
+            "https://www.genesys.com/blog",
+            "https://www.genesys.com/blog/page/2",
+            "https://www.genesys.com/blog/page/3",
+            "https://www.genesys.com/blog/page/4",
+        ],
+        "discovery_mode": "listing",
+        "listing_selectors": [],
+        "article_url_contains": "/blog/post/",
+        "article_url_excludes": [],
+        "min_path_segments": 3,
+        "title_strip_suffixes": [" | Genesys"],
+        "content_selectors": ["div.blog-post-content", "div.post_content",
+                              "div.single-blog-template", "main"],
+        "wait_until": "domcontentloaded",
+        "dynamic_wait_ms": 2000,
+        "delay": 3.0,  # robots.txt sets no crawl-delay
+    },
 }
 
 
@@ -595,25 +620,30 @@ class ConfigurableBlogCrawler:
             if meta_desc and meta_desc.get("content"):
                 post_data["meta_description"] = meta_desc["content"]
 
-            # Publish date
-            for selector in ["time[datetime]", 'meta[property="article:published_time"]',
-                             'span[class*="date"]', 'div[class*="date"]']:
+            # Publish date. Explicit markup first; then JSON-LD datePublished,
+            # which is authoritative where a page has no <time> or meta tag; only
+            # then the class-name heuristic, which takes the first element with
+            # "date" in its class and so can pick up a related post's date.
+            raw_date = None
+            for selector in ["time[datetime]", 'meta[property="article:published_time"]']:
                 date_elem = soup.select_one(selector)
                 if date_elem:
-                    if date_elem.name == "time" and date_elem.get("datetime"):
-                        post_data["published_date"] = date_elem["datetime"]
-                    elif date_elem.name == "meta" and date_elem.get("content"):
-                        post_data["published_date"] = date_elem["content"]
-                    else:
-                        post_data["published_date"] = date_elem.get_text(strip=True)
-                    # Normalize whatever was scraped to YYYY-MM-DD, discarding
-                    # values that aren't dates at all.
-                    cleaned = self._clean_date(post_data.get("published_date"))
-                    if cleaned:
-                        post_data["published_date"] = cleaned
-                    else:
-                        post_data.pop("published_date", None)
-                    break
+                    raw_date = (date_elem.get("datetime") if date_elem.name == "time"
+                                else date_elem.get("content"))
+                    if raw_date:
+                        break
+            if not raw_date:
+                raw_date = self._jsonld_date_published(soup)
+            if not raw_date:
+                for selector in ['span[class*="date"]', 'div[class*="date"]']:
+                    date_elem = soup.select_one(selector)
+                    if date_elem:
+                        raw_date = date_elem.get_text(strip=True)
+                        break
+            # Normalize to YYYY-MM-DD, discarding values that aren't dates at all.
+            cleaned = self._clean_date(raw_date)
+            if cleaned:
+                post_data["published_date"] = cleaned
 
             # Author
             for selector in ['meta[name="author"]', 'span[class*="author"]',
@@ -690,6 +720,28 @@ class ConfigurableBlogCrawler:
         return featured_image
 
     # ── Helpers ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _jsonld_date_published(soup: BeautifulSoup) -> Optional[str]:
+        """datePublished from an Article/BlogPosting JSON-LD block, if present."""
+        wanted = {"Article", "BlogPosting", "NewsArticle", "TechArticle"}
+        for tag in soup.find_all("script", type="application/ld+json"):
+            try:
+                data = json.loads(tag.string or "")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            stack = [data]
+            while stack:
+                node = stack.pop()
+                if isinstance(node, list):
+                    stack.extend(node)
+                elif isinstance(node, dict):
+                    types = node.get("@type")
+                    types = set(types) if isinstance(types, list) else {types}
+                    if types & wanted and node.get("datePublished"):
+                        return str(node["datePublished"])
+                    stack.extend(v for k, v in node.items() if k == "@graph")
+        return None
 
     _DATE_LEAD = re.compile(
         r'^\s*('
