@@ -1036,18 +1036,26 @@ def generate_email_content(candidate_info, blog_recommendations, semantic_summar
     job_list = []
     if job_matches and len(job_matches) > 0:
         for job in job_matches[:3]:  # Max 3 jobs for email
-            job_list.append({
+            entry = {
                 'position': job['position'],
                 'company': job.get('company', ''),
                 'location_type': job.get('location_type', ''),
-                'location': f"{job.get('location_city', '')}, {job.get('location_country', '')}".strip(', '),
-                'compensation': f"{job.get('compensation_currency', '')} {job.get('compensation_min', 0):,.0f} - {job.get('compensation_max', 0):,.0f}",
+                'location': f"{job.get('location_city') or ''}, {job.get('location_country') or ''}".strip(', '),
                 'about_role': (job.get('about_role') or '')[:250],
                 'application_link': job.get('application_link', ''),
-                'match_score': f"{job.get('similarity', 0) * 100:.0f}%",
-                'similarity': job.get('similarity', 0),
+                'match_score': f"{(job.get('similarity') or 0) * 100:.0f}%",
+                'similarity': job.get('similarity') or 0,
                 'llm_reasoning': job.get('llm_evaluation', {}).get('reasoning', '') if isinstance(job.get('llm_evaluation'), dict) else ''
-            })
+            }
+            # Many postings publish no salary. The columns are then NULL, and
+            # .get(key, 0) returns None rather than 0, so formatting crashed
+            # generation for every job-focused email. Omit the field instead of
+            # showing "Not disclosed", which invites the model to comment on it.
+            comp_min, comp_max = job.get('compensation_min'), job.get('compensation_max')
+            if isinstance(comp_min, (int, float)) and isinstance(comp_max, (int, float)):
+                entry['compensation'] = (f"{job.get('compensation_currency') or ''} "
+                                         f"{comp_min:,.0f} - {comp_max:,.0f}").strip()
+            job_list.append(entry)
 
     # Decide which email approach to use
     # If jobs were confirmed by the matching LLM, use job-focused approach
