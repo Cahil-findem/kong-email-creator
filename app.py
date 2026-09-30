@@ -7,7 +7,6 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import os
 import re
-import html as _html
 import json
 import logging
 import numpy as np
@@ -328,42 +327,6 @@ def _insert_before_signoff(email_body, block):
     return email_body + "\n" + block
 
 
-def _build_blog_card(blog, lead_in=None):
-    """Render one blog card in code, matching the markup the nurture prompt uses."""
-    esc = lambda v: _html.escape(str(v or ''), quote=True)
-    url, title = esc(blog.get('blog_url')), esc(blog.get('blog_title'))
-    image = esc(blog.get('blog_featured_image'))
-    fit = esc(blog.get('email_image_fit') or 'cover')
-    source = _blog_source_label(blog.get('blog_url'))
-    blurb = blog.get('email_card_blurb')
-    parts = []
-    if lead_in:
-        parts.append('<p style="margin: 0 0 8px 0; font-size: 15px; color: #6b7280; '
-                     f'line-height: 1.5;">{esc(lead_in)}</p>')
-    parts.append(
-        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" '
-        'style="width: 100%; margin: 0 0 20px 0; border-collapse: collapse;">\n  <tr>')
-    if image:
-        parts.append(
-            '    <td width="160" style="width: 160px; vertical-align: top; padding-right: 16px;">\n'
-            f'      <a href="{url}" style="text-decoration: none;">\n'
-            f'        <img src="{image}" alt="{title}" width="160" height="92" '
-            f'style="width: 160px; height: 92px; object-fit: {fit}; border-radius: 10px; '
-            'display: block; border: 0;">\n      </a>\n    </td>')
-    body = [f'      <a href="{url}" style="font-size: 15px; font-weight: 600; color: #101828; '
-            'text-decoration: none; line-height: 1.35; display: block; margin: 0 0 4px 0;">'
-            f'{title}</a>']
-    if source:
-        body.append('      <div style="font-size: 12px; font-weight: 500; color: #6b7280; '
-                    f'line-height: 1.4; margin: 0 0 6px 0;">{esc(source)}</div>')
-    if blurb:
-        body.append('      <p style="font-size: 13px; color: #6b7280; line-height: 1.45; '
-                    f'margin: 0;">{esc(blurb)}</p>')
-    parts.append('    <td style="vertical-align: top;">\n' + "\n".join(body) + '\n    </td>')
-    parts.append('  </tr>\n</table>')
-    return "\n".join(parts)
-
-
 def _build_campaign_card(campaign):
     """Render the campaign image + CTA in code.
 
@@ -510,8 +473,9 @@ def _missing_key_facts(email_body, campaign):
     return missing
 
 
-# Company-scoped pinned blogs: ALWAYS shown first, with the remaining slot(s)
-# auto-matched per candidate. Contrast COMPANY_FORCED_BLOGS, which replaces
+# Company-scoped pinned blogs: shown first in NURTURE emails, with the remaining
+# slot(s) auto-matched per candidate. Job-focused emails carry no blog cards, so
+# pinned blogs are not added to them. Contrast COMPANY_FORCED_BLOGS, which replaces
 # matching entirely. Same entry shape and per-card overrides as that dict, and
 # URLs must likewise already exist in blog_posts for the same company.
 COMPANY_PINNED_BLOGS = {
@@ -526,9 +490,6 @@ COMPANY_PINNED_BLOGS = {
             # something shared, not as a match to the candidate's interests.
             "intro": "I wanted to share a short video from our team: Henry Finbow on why "
                      "he chose Genesys and what it's like building what's next in AI.",
-            # Lead-in when the email is job-focused.
-            "job_email_intro": "In the meantime, here's a 71-second look at what it's "
-                               "like to build what's next at Genesys:",
         },
     ],
 }
@@ -1486,20 +1447,6 @@ with the base prompt, follow the user's preferences.
                 email_body = _insert_before_signoff(email_body, card_html)
                 logger.info(f"Campaign '{campaign.get('key')}': card token missing, "
                             "inserted card automatically")
-
-        # A company's pinned blogs are meant to appear in EVERY email. The job-focused
-        # template has no blog section, so without this a candidate who matched the
-        # job lost the pinned card. Built in code so the URL and image can't drift.
-        if use_job_focused_approach and not campaign and company in COMPANY_PINNED_BLOGS:
-            pinned_cfg = {e['url']: e for e in COMPANY_PINNED_BLOGS[company] if isinstance(e, dict)}
-            pinned_blogs = [b for b in (blog_recommendations or []) if b.get('blog_url') in pinned_cfg]
-            for b in pinned_blogs:
-                cfg = pinned_cfg[b['blog_url']]
-                intro = (cfg.get('job_email_intro') or cfg.get('intro')
-                         or f"In the meantime, here's a quick look at life at {company}:")
-                email_body = _insert_before_signoff(email_body, _build_blog_card(b, lead_in=intro))
-            if pinned_blogs:
-                logger.info(f"Added {len(pinned_blogs)} pinned card(s) to job-focused email for {company}")
 
         # Append the sender company's stored signature after the sign-off.
         # Kept outside the LLM so names/links/images render exactly as provided.
